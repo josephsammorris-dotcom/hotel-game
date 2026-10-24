@@ -636,9 +636,9 @@ body.lite{--glass:rgba(28,26,24,.93)}
         <label class="sndRow"><input type="checkbox" id="sfxOn"> Sounds <input type="range" id="sfxVol" min="0" max="1" step="0.05" aria-label="Sound effects volume"></label>
         <label>Graphics <select id="gfxSel"><option value="auto">Auto</option><option value="high">Full</option><option value="lite">Lite</option><option value="low">Low</option><option value="custom" hidden>Custom</option></select></label>
         <div class="note" id="gfxNote" style="margin-top:2px"></div>
-        <label class="sndRow"><input type="checkbox" id="fpsOn"> Show frame rate</label>
-        <details class="perfLab"><summary class="note">Performance switches</summary>
-          <p class="note">Flip these mid-game to see what each one changes. Watch the frame rate top right. Switches last until you pick a setting above.</p>
+        <details class="perfLab"><summary class="note">Advanced: frame rate &amp; performance switches</summary>
+          <label class="sndRow"><input type="checkbox" id="fpsOn"> Show frame rate</label>
+          <p class="note">Flip these mid-game to see what each one changes. Switches last until you pick a Graphics setting above.</p>
           <label class="sndRow"><input type="checkbox" data-opt="lite"> Lite finish <small>no gloss, lighter shadows, smaller textures, fewer clouds</small></label>
           <label class="sndRow"><input type="checkbox" data-opt="simple"> Simple shading</label>
           <label class="sndRow"><input type="checkbox" data-opt="blobs"> Painted shadows <small>instead of real-time</small></label>
@@ -1968,7 +1968,13 @@ async function start() {
   try { await Promise.race([Promise.all(['700 20px "Barlow Condensed"', '600 20px "Barlow Condensed"'].map(f => document.fonts.load(f))), wait(2500)]); } catch (e) {}
   try {
     view = createBoard3D({ THREE, OrbitControls, EffectComposer, RenderPass, ShaderPass, OutputPass, RoomEnvironment, mergeGeometries, UnrealBloomPass, toCreasedNormals, GTAOPass }, $('stage'), BOARD, SCENERY, { tiltShift: false, hour: 9.5 });
-    let autoTier = 'full'; try { autoTier = localStorage.getItem('hotelAutoTier') || (localStorage.getItem('hotelAutoLite') === '1' ? 'lite' : 'full'); } catch (er) {}
+    let autoTier = null; try { autoTier = localStorage.getItem('hotelAutoTier') || (localStorage.getItem('hotelAutoLite') === '1' ? 'lite' : null); } catch (er) {}
+    if (!autoTier) { // first launch on this device: a sensible starting guess (Auto still steps up or down from here)
+      let gpu = ''; try { const gl = view.renderer.getContext(), dbg = gl.getExtension('WEBGL_debug_renderer_info'); gpu = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : ''); } catch (er) {}
+      const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
+      autoTier = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu) || cores <= 2 || mem <= 2 ? 'low'
+        : cores <= 4 || mem <= 4 || /mali-[gt]?[1-7]\d\b|adreno \(tm\) [3-5]\d\d|powervr|intel\(r\) hd graphics( [2-5]\d{2,3})?\b/i.test(gpu) ? 'lite' : 'full';
+    }
     view.onPerf(p => {
       document.body.classList.toggle('lite', plainForced === null ? !!p.lite : plainForced);
       if (p.mode === 'auto' && (p.tier === 'lite' || p.tier === 'low')) { try { localStorage.setItem('hotelAutoTier', p.tier); } catch (er) {} }
@@ -1985,10 +1991,11 @@ async function start() {
       $('gpuNote').textContent = 'Graphics: ' + gpu;
       if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu)) {
         const msg = 'This browser is drawing the 3D board without your graphics chip (hardware acceleration is off), so it will be slow. In Chrome or Edge: Settings → System → turn on "Use graphics acceleration when available", then restart the browser.';
-        $('gpuNote').textContent = msg + ' (' + gpu + ')'; setTimeout(() => toast('Hardware graphics acceleration is off in this browser — see Table options › Performance switches', 'bad'), 3000);
+        $('gpuNote').textContent = msg + ' (' + gpu + ')'; setTimeout(() => toast('Hardware graphics acceleration is off in this browser — see Table options › Advanced', 'bad'), 3000);
       }
     } catch (er) {}
     view.onSound((n, d) => Sound.board(n, d));
+    view.onContextLost(lost => { if (lost) { toast('Graphics paused by the device, recovering…'); clearTimeout(window._ctxT); window._ctxT = setTimeout(() => { if (confirm('The 3D view could not be restored. Reload the game? Your game is saved.')) location.reload(); }, 8000); } else { clearTimeout(window._ctxT); toast('Graphics restored'); } });
     setTimeout(prepareSpaceImages, 4000);
     setInterval(() => Sound.weather(view.getEnv()), 1500);
   } catch (err) {
@@ -2009,8 +2016,9 @@ async function start() {
   setInterval(renderClock, 2000);
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
-  window._debug = { get state() { return state; }, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
-  requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done')));
+  window._debug = { get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
+  // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
+  ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
 start();
 </script>

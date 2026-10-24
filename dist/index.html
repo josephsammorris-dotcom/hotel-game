@@ -636,9 +636,9 @@ body.lite{--glass:rgba(28,26,24,.93)}
         <label class="sndRow"><input type="checkbox" id="sfxOn"> Sounds <input type="range" id="sfxVol" min="0" max="1" step="0.05" aria-label="Sound effects volume"></label>
         <label>Graphics <select id="gfxSel"><option value="auto">Auto</option><option value="high">Full</option><option value="lite">Lite</option><option value="low">Low</option><option value="custom" hidden>Custom</option></select></label>
         <div class="note" id="gfxNote" style="margin-top:2px"></div>
-        <label class="sndRow"><input type="checkbox" id="fpsOn"> Show frame rate</label>
-        <details class="perfLab"><summary class="note">Performance switches</summary>
-          <p class="note">Flip these mid-game to see what each one changes. Watch the frame rate top right. Switches last until you pick a setting above.</p>
+        <details class="perfLab"><summary class="note">Advanced: frame rate &amp; performance switches</summary>
+          <label class="sndRow"><input type="checkbox" id="fpsOn"> Show frame rate</label>
+          <p class="note">Flip these mid-game to see what each one changes. Switches last until you pick a Graphics setting above.</p>
           <label class="sndRow"><input type="checkbox" data-opt="lite"> Lite finish <small>no gloss, lighter shadows, smaller textures, fewer clouds</small></label>
           <label class="sndRow"><input type="checkbox" data-opt="simple"> Simple shading</label>
           <label class="sndRow"><input type="checkbox" data-opt="blobs"> Painted shadows <small>instead of real-time</small></label>
@@ -2912,6 +2912,27 @@ function createBoard3D(deps, container, board, scenery, opts) {
     g.fillText({ '#f2c417': 'HTL 1', '#3fa34d': 'HTL 2', '#2f79c9': 'HTL 3', '#d0342c': 'HTL 4' }[colour] || 'HOTEL', 128, 43);
     return (plateCache[key] = tex(c));
   }
+  // Combine the meshes of a rigid assembly (a car body, a wheel) that share a material into one mesh each, in the
+  // assembly's own space, so it draws in a handful of calls instead of dozens. The originals are discarded.
+  function mergeRigid(container, include) {
+    container.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(container.matrixWorld).invert(), groups = new Map(), victims = [];
+    container.traverse(o => {
+      if (!o.isMesh || o === container || Array.isArray(o.material) || o.material.transparent || (include && !include(o))) return;
+      const g = o.geometry; if (!g.attributes.position || !g.attributes.normal) return;
+      const key = o.material.uuid + '|' + o.renderOrder; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(o);
+    });
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const geos = list.map(o => { let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+        if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+        g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); return g; });
+      const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) continue;
+      const m = new THREE.Mesh(mg, list[0].material); m.renderOrder = list[0].renderOrder; container.add(m);
+      list.forEach(o => victims.push(o));
+    }
+    victims.forEach(o => o.parent && o.parent.remove(o));
+  }
   function carMesh(colour) {
     const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
     const paint = plastic(colour, { roughness: 0.2, clearcoat: 1, clearcoatRoughness: 0.05 });
@@ -2986,6 +3007,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     }
     // a pool of headlight on the road ahead, faded in at night
     const beam = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.55).rotateX(-Math.PI / 2), glowMat('#fff1cc', 0.55)); beam.position.set(0.72, 0.006, 0); beam.renderOrder = 2; root.add(beam);
+    mergeRigid(body); wheels.forEach(w => mergeRigid(w));
     shadowed(root); beam.castShadow = false;
     body.position.y = 0.012;
     root.userData = { body, wheels, steer, spin: 0, roll: 0, rollV: 0, pitch: 0, pitchV: 0, rollT: 0, pitchT: 0, steerA: 0 };
@@ -3287,6 +3309,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   // Returns the box around whatever was newly built, so the camera can go and watch it go up.
   function setHotel(id, built, facilities, animate) {
     const h = hotels[id]; if (!h) return null;
+    if (h.built !== built || h.facilities !== !!facilities) { if (hotelBatches && hotelBatches[id]) unmergeHotel(id); if (hotelDirty) hotelDirty.add(id); }
     const anim = animate && !reduceMotion, box = new THREE.Box3(); let grew = false;
     h.pieces.forEach((obj, k) => {
       const show = k < built;
@@ -3702,7 +3725,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     return asCanvas ? out : out.toDataURL();
   }
 
-  const ray = new THREE.Raycaster(), ptr = new THREE.Vector2();
+  const ray = new THREE.Raycaster(), ptr = new THREE.Vector2(); ray.layers.enableAll(); // merged originals live on a hidden layer
   let pickFn = null, pickSpaceFn = null, downAt = null;
   renderer.domElement.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; });
   renderer.domElement.addEventListener('pointerup', e => {
@@ -3730,7 +3753,9 @@ function createBoard3D(deps, container, board, scenery, opts) {
   };
   // phones already draw at 2-3x pixel density, where 2x multisampling looks the same as 4x for half the cost
   const FULL_SAMPLES = SMALL && (window.devicePixelRatio || 1) >= 2 ? 2 : 4;
-  const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: FULL_SAMPLES });
+  // high-precision buffers where the device can render to them (older iPads/Macs can't: they'd show a black screen)
+  const halfOK = renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float');
+  const rt = new THREE.WebGLRenderTarget(1, 1, { type: halfOK ? THREE.HalfFloatType : THREE.UnsignedByteType, samples: FULL_SAMPLES });
   const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
   // ambient occlusion: soft contact shadows where buildings meet the ground and in corners (desktop-class GPUs)
@@ -3788,7 +3813,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   // redrawn when something that casts a shadow moves.
   const DPR = window.devicePixelRatio || 1;
   const perf = { mode: 'auto', max: Math.min(DPR, 2), min: 0.75, pr: Math.min(DPR, 2), ceil: Math.min(DPR, 2), ceilAt: 0,
-    win: 0, n: 0, slow: 0, fast: 0, lastDraw: 0, lastShadow: -1, busyUntil: 0, lite: false, liteAt: 0, cb: null, fps: 0, fpsN: 0, fpsT: 0,
+    win: 0, n: 0, slow: 0, fast: 0, roomy: 0, upgraded: false, lastDraw: 0, lastShadow: -1, busyUntil: 0, lite: false, liteAt: 0, cb: null, fps: 0, fpsN: 0, fpsT: 0,
     camP: new THREE.Vector3(), camQ: new THREE.Quaternion() };
   const notify = () => { if (perf.cb) perf.cb({ lite: perf.lite, profile: liteProfile ? 'lite' : 'full', tier, opts: Object.assign({}, opt), pr: perf.pr, mode: perf.mode }); };
   function setSamples() {
@@ -3797,7 +3822,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   }
   function setPR(pr) {
     pr = Math.max(perf.min, Math.min(perf.max, Math.round(pr * 4) / 4)); if (Math.abs(pr - renderer.getPixelRatio()) < 0.01) return;
-    perf.pr = pr; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); resize(); setSamples(); renderer.shadowMap.needsUpdate = true; notify();
+    perf.pr = pr; renderer.setPixelRatio(pr); composer.setPixelRatio(pr); lastSize = ''; resize(); setSamples(); renderer.shadowMap.needsUpdate = true; notify();
   }
   function setLite(on) { if (perf.lite === on) return; perf.lite = on; perf.liteAt = performance.now(); notify(); }
 
@@ -3845,7 +3870,11 @@ function createBoard3D(deps, container, board, scenery, opts) {
   function setOptions(o, fromTier) {
     if (!fromTier) { tier = 'custom'; perf.mode = 'custom'; }
     if ('lite' in o) applyProfile(o.lite);
-    if ('simple' in o && !!o.simple !== opt.simple) { opt.simple = !!o.simple; applySimple(opt.simple); }
+    if ('simple' in o && !!o.simple !== opt.simple) {
+      opt.simple = !!o.simple;
+      if (opt.simple && renderer.compileAsync) { const want = ++simpleGen; prepareSimple().then(() => { if (want === simpleGen && opt.simple) applySimple(true); }); }
+      else { simpleGen++; applySimple(opt.simple); }
+    }
     if ('blobs' in o && !!o.blobs !== opt.blobs) { opt.blobs = !!o.blobs; applyBlobs(opt.blobs); }
     if ('noOverlays' in o && !!o.noOverlays !== opt.noOverlays) { opt.noOverlays = !!o.noOverlays; applyOverlays(); }
     if ('noPost' in o) { opt.noPost = !!o.noPost; vignette.style.display = opt.noPost ? 'block' : 'none'; }
@@ -3886,6 +3915,14 @@ function createBoard3D(deps, container, board, scenery, opts) {
   // the simple materials don't receive the soft sky reflection lighting, so an ambient light stands in for it
   const simpleAmb = new THREE.AmbientLight('#eef2ff', 0); scene.add(simpleAmb);
   let SIMPLE_AMB = 6.5;
+  // build the simple materials and compile them off-screen, so switching to them doesn't stall a frame
+  let simpleGen = 0;
+  function prepareSimple() {
+    const tmp = new THREE.Scene(), g = new THREE.BoxGeometry(0.01, 0.01, 0.01), seen = new Set();
+    scene.traverse(o => { if (!(o.isMesh || o.isInstancedMesh) || !o.material || o.userData.noSimple) return;
+      for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && !seen.has(m)) { seen.add(m); tmp.add(new THREE.Mesh(g, simpleFor(m))); } });
+    return renderer.compileAsync(tmp, camera, scene).catch(() => {}).then(() => g.dispose());
+  }
   function syncSimple() { simpleAmb.intensity = SIMPLE_AMB * scene.environmentIntensity; for (const [m, n] of simpleOf) { n.opacity = m.opacity; n.emissiveIntensity = m.emissiveIntensity; n.visible = m.visible; n.transparent = m.transparent; } }
 
   // painted shadows: a soft dark disc under each building, car and tree; the real-time shadow map is switched off
@@ -3926,6 +3963,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   // draw calls. Originals stay in the scene (moved to a hidden layer); if any of them moves or is shown/hidden,
   // its batch is undone automatically.
   const HIDE_LAYER = 30;
+  var hotelBatches = {}, hotelDirty = new Set();
   let merged = [];
   function mergeStatic() {
     unmergeAll(); scene.updateMatrixWorld(true);
@@ -3934,35 +3972,74 @@ function createBoard3D(deps, container, board, scenery, opts) {
     for (const id in flags) skip.add(flags[id].gp);
     for (const b of blobs || []) skip.add(b.m);
     const skipped = o => { for (let p = o; p; p = p.parent) if (skip.has(p)) return true; return false; };
+    const groups = groupMeshes([scene], skipped);
+    for (const list of groups.values()) { const b = makeBatch(list); if (b) merged.push(b); }
+    for (const id in hotels) hotelDirty.add(id);
+  }
+  // Entries are { o: original mesh, mat, geo }. Meshes with several materials (allowed when splitMulti) are split
+  // into one entry per material so each piece can join the batch for its material.
+  function groupMeshes(roots, skipped, splitMulti) {
     const groups = new Map();
-    scene.traverse(o => {
-      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.userData.merged || Array.isArray(o.material)) return;
-      const m = o.material, g = o.geometry; if (!g || !g.attributes.position || m.transparent || Object.keys(g.morphAttributes).length) return;
-      if (!chainVisible(o) || skipped(o)) return;
-      const attrs = Object.keys(g.attributes).sort().map(k => k + g.attributes[k].itemSize + (g.attributes[k].array.constructor.name)).join(',');
-      const key = m.uuid + '|' + attrs + '|' + (g.index ? 'i' : 'n') + '|' + o.castShadow + o.receiveShadow + '|' + o.renderOrder;
-      if (!groups.has(key)) groups.set(key, []); groups.get(key).push(o);
+    const add = (o, m, geo) => {
+      if (m.transparent) return;
+      const attrs = Object.keys(geo.attributes).sort().map(k => k + geo.attributes[k].itemSize + (geo.attributes[k].array.constructor.name)).join(',');
+      const key = m.uuid + '|' + attrs + '|' + (geo.index ? 'i' : 'n') + '|' + o.castShadow + o.receiveShadow + '|' + o.renderOrder;
+      if (!groups.has(key)) groups.set(key, []); groups.get(key).push({ o, mat: m, geo });
+    };
+    for (const r of roots) r.traverse(o => {
+      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.userData.merged || o.layers.mask !== 1) return;
+      const g = o.geometry; if (!g || !g.attributes.position || Object.keys(g.morphAttributes).length) return;
+      if (!chainVisible(o) || (skipped && skipped(o))) return;
+      if (!Array.isArray(o.material)) return add(o, o.material, g);
+      if (!splitMulti || !g.groups.length || o.material.some(m => m.transparent)) return;
+      const src = g.index ? g : null; if (!src) return;
+      for (const gr of g.groups) {
+        const m = o.material[gr.materialIndex]; if (!m) continue;
+        const part = new THREE.BufferGeometry(); for (const k in g.attributes) part.setAttribute(k, g.attributes[k]);
+        part.setIndex(Array.from(g.index.array.slice(gr.start, gr.start + gr.count))); add(o, m, part);
+      }
     });
-    for (const list of groups.values()) {
-      if (list.length < 2) continue;
-      const geos = list.map(o => { const c = o.geometry.clone(); c.applyMatrix4(o.matrixWorld); return c; });
-      const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) continue;
-      const mesh = new THREE.Mesh(mg, list[0].material); mesh.castShadow = list[0].castShadow; mesh.receiveShadow = list[0].receiveShadow; mesh.renderOrder = list[0].renderOrder;
-      mesh.matrixAutoUpdate = false; mesh.userData.merged = true; mesh.userData.noSimple = false; scene.add(mesh);
-      const originals = list.map(o => { o.layers.set(HIDE_LAYER); o.updateMatrix(); o.matrixAutoUpdate = false;
-        return { o, parent: o.parent, pw: o.parent ? o.parent.matrixWorld.clone() : null, p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() }; });
-      merged.push({ mesh, originals });
-    }
+    return groups;
+  }
+  function makeBatch(list, hotel) {
+    // a lone ordinary mesh gains nothing from merging; a lone split part must still be merged, or the faces it carries would vanish
+    if (list.length < 2 && !(list.length === 1 && list[0].geo !== list[0].o.geometry)) return null;
+    const geos = list.map(e => { const c = e.geo.clone(); c.applyMatrix4(e.o.matrixWorld); return c; });
+    const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) return null;
+    const f = list[0].o, mesh = new THREE.Mesh(mg, list[0].mat); mesh.castShadow = f.castShadow; mesh.receiveShadow = f.receiveShadow; mesh.renderOrder = f.renderOrder;
+    mesh.matrixAutoUpdate = false; mesh.userData.merged = true; scene.add(mesh);
+    const uniq = [...new Set(list.map(e => e.o))];
+    const originals = uniq.map(o => { o.layers.set(HIDE_LAYER); o.updateMatrix(); o.matrixAutoUpdate = false;
+      return { o, parent: o.parent, pw: o.parent ? o.parent.matrixWorld.clone() : null, p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() }; });
+    return { mesh, originals, hotel, mat: origOf.get(list[0].mat) || list[0].mat };
+  }
+  // Finished hotels are merged too (they are the bulk of the late-game scene). A hotel is unmerged the moment
+  // setHotel touches it, and merged again once its building or demolition animation has finished.
+  function mergeHotel(id) {
+    unmergeHotel(id); const h = hotels[id];
+    const roots = h.pieces.filter(o => o.visible); if (h.grounds && h.grounds.group.visible) roots.push(h.grounds.group);
+    roots.forEach(r => r.updateMatrixWorld(true));
+    const bs = []; for (const list of groupMeshes(roots, null, true).values()) { const b = makeBatch(list, id); if (b) { merged.push(b); bs.push(b); } }
+    hotelBatches[id] = bs;
+  }
+  function unmergeHotel(id) {
+    const bs = hotelBatches[id]; if (!bs) return; delete hotelBatches[id];
+    for (const b of bs) { const i = merged.indexOf(b); if (i >= 0) { merged.splice(i, 1); unmergeBatch(b); } }
+  }
+  function stepHotelMerge() {
+    if (!opt.merge || !hotelDirty.size) return;
+    const busy = new Set(); for (const a of anims) { const o = a.obj || a.g; if (o && o.userData && o.userData.hotel) busy.add(o.userData.hotel); if (a.kind === 'build' || a.kind === 'sprout') busy.add('*'); }
+    if (busy.has('*')) return;
+    for (const id of hotelDirty) { if (busy.has(id)) continue; hotelDirty.delete(id); mergeHotel(id); break; } // one hotel per tick spreads the work
   }
   function unmergeBatch(b) { scene.remove(b.mesh); b.mesh.geometry.dispose(); for (const r of b.originals) { r.o.layers.set(0); r.o.matrixAutoUpdate = true; r.o.updateMatrixWorld(true); } }
-  function unmergeAll() { merged.forEach(unmergeBatch); merged = []; }
+  function unmergeAll() { merged.forEach(unmergeBatch); merged = []; for (const id in hotelBatches) delete hotelBatches[id]; for (const id in hotels) hotelDirty.add(id); }
   function checkMerged() {
     merged = merged.filter(b => {
       for (const r of b.originals) { const o = r.o;
         if (o.parent !== r.parent || !chainVisible(o) || !o.position.equals(r.p) || !o.quaternion.equals(r.q) || !o.scale.equals(r.s) || (r.pw && !o.parent.matrixWorld.equals(r.pw))) {
-          if (window._mergeLog) window._mergeLog.push({ n: b.originals.length, why: o.parent !== r.parent ? 'parent' : !chainVisible(o) ? 'hidden' : !o.position.equals(r.p) ? 'moved' : !o.quaternion.equals(r.q) ? 'turned' : !o.scale.equals(r.s) ? 'scaled' : 'parentMoved', type: o.geometry.type, mat: o.material.type + (o.material.color ? '#' + o.material.color.getHexString() : ''), parentType: o.parent && o.parent.type, pos: [o.position.x.toFixed(2), o.position.y.toFixed(2), o.position.z.toFixed(2)] });
-          unmergeBatch(b); return false; } }
-      b.mesh.material = b.originals[0].o.material; // follows simple-shading swaps
+          unmergeBatch(b); if (b.hotel) { const id = b.hotel; setTimeout(() => { unmergeHotel(id); hotelDirty.add(id); }, 0); } return false; } }
+      b.mesh.material = opt.simple && b.mat.isMeshStandardMaterial ? simpleFor(b.mat) : b.mat; // follows simple-shading swaps
       return true;
     });
   }
@@ -3997,7 +4074,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     if (opt.simple) { syncSimple(); if (now - lastScan > 2000) { lastScan = now; applySimple(true); } }
     if (opt.blobs && blobs) for (const b of blobs) b.m.visible = chainVisible(b.obj);
     if (opt.noOverlays) for (const [m] of glowMats) m.visible = false;
-    if (now - lastUpkeep > 500) { lastUpkeep = now; if (merged.length) checkMerged(); stepAutoFreeze(); }
+    if (now - lastUpkeep > 500) { lastUpkeep = now; if (merged.length) checkMerged(); stepAutoFreeze(); stepHotelMerge(); }
   }
 
   function setQuality(q, o) {
@@ -4042,7 +4119,11 @@ function createBoard3D(deps, container, board, scenery, opts) {
         else if (tier === 'lite') setTier('low');
         else if (!perf.lite) setLite(true);
         else if (perf.pr > perf.min + 0.01) step(); } }
-    else if (avg < target * 1.08) { perf.slow = 0; if (++perf.fast >= 4) { perf.fast = 0;
+    else if (avg < target * 1.08) {
+      // lots of headroom for a sustained spell (about 18 s of moving frames): try the next richer look, once per session
+      if (avg < target * 0.6 && tier !== 'full' && tier !== 'custom' && !perf.upgraded && perf.pr >= perf.ceil - 0.01) { if (++perf.roomy >= 12) { perf.roomy = 0; perf.upgraded = true; setTier(tier === 'low' ? 'lite' : 'full'); return; } }
+      else perf.roomy = 0;
+      perf.slow = 0; if (++perf.fast >= 4) { perf.fast = 0;
         if (perf.pr < Math.min(1, perf.ceil) - 0.01) setPR(perf.pr + 0.25);
         else if (perf.lite && now - perf.liteAt > 60000) setLite(false);
         else if (perf.pr < perf.ceil - 0.01) setPR(perf.pr + 0.25); } }
@@ -4054,10 +4135,13 @@ function createBoard3D(deps, container, board, scenery, opts) {
 
   // ---------------------------------------------------------------- resize and loop
   let insetLeft = 0;
+  let lastSize = '';
   function resize() {
     const w = container.clientWidth || 800, h = container.clientHeight || 600;
     if (insetLeft > 0 && w > 720) camera.setViewOffset(w + insetLeft, h, 0, 0, w, h); else camera.clearViewOffset();
-    renderer.setSize(w, h, false); composer.setSize(w, h); if (gtao) { const ap = Math.min(renderer.getPixelRatio(), 1.25); gtao.setSize(Math.round(w * ap), Math.round(h * ap)); } if (farBlur) farBlur.uniforms.res.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+    const key = w + 'x' + h + '@' + renderer.getPixelRatio();
+    if (key !== lastSize) { lastSize = key; renderer.setSize(w, h, false); composer.setSize(w, h); }
+    if (gtao) { const ap = Math.min(renderer.getPixelRatio(), 1.25); gtao.setSize(Math.round(w * ap), Math.round(h * ap)); } if (farBlur) farBlur.uniforms.res.value.set(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
     const pr = renderer.getPixelRatio(); tsH.uniforms.res.value.set(w * pr, h * pr); tsV.uniforms.res.value.set(w * pr, h * pr);
     const off = insetLeft > 0 && w > 720 ? insetLeft : 0;
     camera.aspect = (w + off) / h; camera.fov = driver ? (w / h < 0.85 ? 72 : 58) : (w / h < 0.85 ? 50 : w / h < 1.2 ? 40 : 32); camera.near = driver ? 0.02 : 0.1; camera.updateProjectionMatrix();
@@ -4085,6 +4169,10 @@ function createBoard3D(deps, container, board, scenery, opts) {
     if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(dt);
     govern(now, ms, busy && wasBusy);
   }
+  // Phones and tablets can drop the 3D context (switching apps, low memory). Ask for it back, pause meanwhile, resume after.
+  let lostCb = null;
+  renderer.domElement.addEventListener('webglcontextlost', e => { e.preventDefault(); running = false; if (lostCb) lostCb(true); }, false);
+  renderer.domElement.addEventListener('webglcontextrestored', () => { running = true; lastSize = ''; resize(); renderer.shadowMap.needsUpdate = true; requestAnimationFrame(frame); if (lostCb) lostCb(false); }, false);
   // any touch, drag or wheel on the board wakes the loop to full rate at once
   for (const evn of ['pointerdown', 'pointermove', 'wheel', 'touchstart']) renderer.domElement.addEventListener(evn, e => { if (evn === 'pointermove' && !e.buttons) return; perf.busyUntil = performance.now() + 600; }, { passive: true });
   document.addEventListener('visibilitychange', () => { clock.getDelta(); perf.win = 0; perf.n = 0; });
@@ -4111,7 +4199,15 @@ function createBoard3D(deps, container, board, scenery, opts) {
   initAutoFreeze();
   scene.updateMatrix(); scene.matrixAutoUpdate = false; // the scene root never moves, so it needn't force a rebuild of everything below it
   for (const id in hotels) { for (const o of hotels[id].pieces) if (!o.visible) freeze(o); const g = hotels[id].grounds; if (g && !g.group.visible) freeze(g.group); }
-  requestAnimationFrame(frame);
+  // Compile every shader in the background (parallel where the browser supports it) before drawing the first frame,
+  // instead of freezing the page while the first frame compiles them all. setQuality runs before this starts.
+  let readyResolve; const ready = new Promise(r => { readyResolve = r; });
+  setTimeout(() => {
+    const go = () => { if (!started) { started = true; requestAnimationFrame(frame); } readyResolve(); };
+    let started = false;
+    try { (renderer.compileAsync ? renderer.compileAsync(scene, camera) : Promise.resolve()).then(go, go); } catch (e) { go(); }
+    setTimeout(go, 12000); // never wait forever
+  }, 0);
 
   // first framing of the whole board
   { const v = homeView(); camera.position.copy(v.pos); controls.target.copy(v.target); controls.update(); }
@@ -4125,7 +4221,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     setDriveSpeed(k) { driveSpeed = k; },
     _govern(ms, secs, t0) { let t = t0 || performance.now(); const end = t + secs * 1000; while (t < end) { t += ms; govern(t, ms, true); } return { pr: perf.pr, lite: perf.lite, ceil: perf.ceil }; }, // test hook
     _advance(sec) { for (let t = 0; t < sec; t += 1 / 30) simulate(1 / 30); }, // test hook: run the world forward without drawing
-    onPerf(fn) { perf.cb = fn; notify(); }, perfState: () => ({ mode: perf.mode, tier, profile: liteProfile ? 'lite' : 'full', pr: perf.pr, lite: perf.lite, ceil: perf.ceil, fps: perf.fps, idle: performance.now() > perf.busyUntil, n: perf.n, slow: perf.slow, fast: perf.fast, last: Math.round(perf.lastMs || 0) }),
+    onPerf(fn) { perf.cb = fn; notify(); }, ready, onContextLost(fn) { lostCb = fn; }, perfState: () => ({ mode: perf.mode, tier, profile: liteProfile ? 'lite' : 'full', pr: perf.pr, lite: perf.lite, ceil: perf.ceil, fps: perf.fps, idle: performance.now() > perf.busyUntil, n: perf.n, slow: perf.slow, fast: perf.fast, last: Math.round(perf.lastMs || 0) }),
     _applyProfile: applyProfile, setOptions, setSharpness, setTier, getOptions: () => Object.assign({ lite: liteProfile }, opt), _merged: () => merged.length, _ambK(k) { SIMPLE_AMB = k; }, _upkeep() { labUpkeep(performance.now()); }, _profileFrame() { const t0 = performance.now(); simulate(1 / 30); const t1 = performance.now(); labUpkeep(t1); busyNow(); const t2 = performance.now(); if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(1 / 30); const t3 = performance.now(); return { sim: t1 - t0, upkeep: t2 - t1, render: t3 - t2 }; }, _composer: composer, _renderOnce() { if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(0.016); },
     getEnv, setTimeMode, setWeather, onEnv(fn) { env.listeners.push(fn); fn(getEnv()); },
     setInsetLeft(px) { insetLeft = px; resize(); },
@@ -5326,7 +5422,13 @@ async function start() {
   try { await Promise.race([Promise.all(['700 20px "Barlow Condensed"', '600 20px "Barlow Condensed"'].map(f => document.fonts.load(f))), wait(2500)]); } catch (e) {}
   try {
     view = createBoard3D({ THREE, OrbitControls, EffectComposer, RenderPass, ShaderPass, OutputPass, RoomEnvironment, mergeGeometries, UnrealBloomPass, toCreasedNormals, GTAOPass }, $('stage'), BOARD, SCENERY, { tiltShift: false, hour: 9.5 });
-    let autoTier = 'full'; try { autoTier = localStorage.getItem('hotelAutoTier') || (localStorage.getItem('hotelAutoLite') === '1' ? 'lite' : 'full'); } catch (er) {}
+    let autoTier = null; try { autoTier = localStorage.getItem('hotelAutoTier') || (localStorage.getItem('hotelAutoLite') === '1' ? 'lite' : null); } catch (er) {}
+    if (!autoTier) { // first launch on this device: a sensible starting guess (Auto still steps up or down from here)
+      let gpu = ''; try { const gl = view.renderer.getContext(), dbg = gl.getExtension('WEBGL_debug_renderer_info'); gpu = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : ''); } catch (er) {}
+      const cores = navigator.hardwareConcurrency || 4, mem = navigator.deviceMemory || 8;
+      autoTier = /swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu) || cores <= 2 || mem <= 2 ? 'low'
+        : cores <= 4 || mem <= 4 || /mali-[gt]?[1-7]\d\b|adreno \(tm\) [3-5]\d\d|powervr|intel\(r\) hd graphics( [2-5]\d{2,3})?\b/i.test(gpu) ? 'lite' : 'full';
+    }
     view.onPerf(p => {
       document.body.classList.toggle('lite', plainForced === null ? !!p.lite : plainForced);
       if (p.mode === 'auto' && (p.tier === 'lite' || p.tier === 'low')) { try { localStorage.setItem('hotelAutoTier', p.tier); } catch (er) {} }
@@ -5343,10 +5445,11 @@ async function start() {
       $('gpuNote').textContent = 'Graphics: ' + gpu;
       if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu)) {
         const msg = 'This browser is drawing the 3D board without your graphics chip (hardware acceleration is off), so it will be slow. In Chrome or Edge: Settings → System → turn on "Use graphics acceleration when available", then restart the browser.';
-        $('gpuNote').textContent = msg + ' (' + gpu + ')'; setTimeout(() => toast('Hardware graphics acceleration is off in this browser — see Table options › Performance switches', 'bad'), 3000);
+        $('gpuNote').textContent = msg + ' (' + gpu + ')'; setTimeout(() => toast('Hardware graphics acceleration is off in this browser — see Table options › Advanced', 'bad'), 3000);
       }
     } catch (er) {}
     view.onSound((n, d) => Sound.board(n, d));
+    view.onContextLost(lost => { if (lost) { toast('Graphics paused by the device, recovering…'); clearTimeout(window._ctxT); window._ctxT = setTimeout(() => { if (confirm('The 3D view could not be restored. Reload the game? Your game is saved.')) location.reload(); }, 8000); } else { clearTimeout(window._ctxT); toast('Graphics restored'); } });
     setTimeout(prepareSpaceImages, 4000);
     setInterval(() => Sound.weather(view.getEnv()), 1500);
   } catch (err) {
@@ -5367,8 +5470,9 @@ async function start() {
   setInterval(renderClock, 2000);
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
-  window._debug = { get state() { return state; }, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
-  requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done')));
+  window._debug = { get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
+  // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
+  ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
 start();
 </script>
