@@ -581,10 +581,18 @@ body.lite *{-webkit-backdrop-filter:none!important;backdrop-filter:none!importan
 body.lite{--glass:rgba(28,26,24,.93)}
 #fpsBox{position:fixed;z-index:6;right:max(16px,env(safe-area-inset-right));top:calc(var(--barH) + 10px + env(safe-area-inset-top,0px));font:600 12px ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:4px 8px;border-radius:6px;pointer-events:none}
 .perfLab{margin-top:6px}.perfLab small{opacity:.65;font-size:.78em;margin-left:4px}.perfLab p{margin:6px 0}
+.lobbyTop{display:flex;gap:16px;align-items:center;margin:6px 0 12px}.qr{width:150px;height:150px;flex:none;background:#fff;border-radius:10px;padding:4px}.qr svg{width:100%;height:100%;display:block}
+.lobbyCode{font:700 2.6rem/1 "Barlow Condensed",sans-serif;letter-spacing:.18em;color:var(--gold);margin:2px 0 8px}.lobbyUrl{font:600 .85rem ui-monospace,Menlo,monospace;word-break:break-all;opacity:.85}
+.lobbySeats{display:grid;gap:8px}.lseat{display:flex;align-items:center;gap:10px;min-height:38px}.lseat b{flex:1}.lseat select{flex:1}.lst{font-size:.78rem;padding:2px 8px;border-radius:99px}.lst.on{background:rgba(80,190,110,.2);color:#9fe0b0}.lst.off{background:rgba(220,90,80,.2);color:#ff9a8f}
+.pname{display:grid;gap:6px;margin:8px 0 12px}.pname input{font-size:1.05rem;padding:10px 12px}
+.phoneSeats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0 12px}.pseat{display:flex;align-items:center;gap:8px;justify-content:flex-start;text-align:left;border:2px solid transparent;min-height:46px}.pseat.me{border-color:var(--pc);background:rgba(255,255,255,.1)}.pseat:disabled{opacity:.55}
+#netBar{position:fixed;z-index:9;left:50%;top:calc(var(--barH) + 10px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:rgba(160,60,40,.92);color:#fff;font-weight:600;font-size:.88rem;padding:7px 14px;border-radius:99px;box-shadow:0 6px 18px rgba(0,0,0,.35);pointer-events:none}
+#tvModeBtn{margin-top:4px}
 </style>
 
 <div id="stage" aria-label="3D model of the Hotel board"></div>
 <div id="fpsBox" class="hidden"></div>
+<div id="netBar" class="hidden" role="status"></div>
 <div id="loading"><div>Setting out the board…</div></div>
 
 <aside class="panel" id="setupPanel">
@@ -792,6 +800,13 @@ const SAVE_KEY = 'hotel-game-save';
 const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let view = null, state = null, acting = false, fast = false, botTimer = null;
+// ---- multi-screen play. ?tv: this screen is the table (the referee: it checks moves and runs computer players).
+// ?join=CODE: this screen is one player's phone. Otherwise: pass-and-play on one screen, as before.
+const QS = new URLSearchParams(location.search);
+const NET = { mode: QS.has('tv') ? 'host' : QS.get('join') ? 'player' : 'local', code: null, id: null, ws: null, open: false, seq: 0, me: null,
+  q: [], inbox: [], snaps: new Set(), stats: { nack: 0, snap: 0, sent: 0 }, seats: [null, null, null, null], online: {}, hostOn: false, waiting: false, started: false, lastBuzz: null };
+// does this screen control player p? (pass-and-play: every human; a phone: only its own player; the TV: nobody)
+const mine = p => !!p && !p.ai && (NET.mode === 'local' || (NET.mode === 'player' && p.id === NET.me));
 let seen = null; // last-synced snapshot of what the 3D board is showing
 
 document.addEventListener('click', e => {
@@ -969,11 +984,16 @@ for (let i = 0; i < 4; i++) {
   seatsEl.appendChild(d);
   d.querySelector('select').value = i === 0 ? 'human' : i < 3 ? 'easy' : 'none';
 }
-function saveGame() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {} }
+function saveGame() {
+  if (NET.mode === 'player') return;
+  try { if (NET.mode === 'host') localStorage.setItem(TV_SAVE, JSON.stringify({ state, seq: NET.seq, seats: NET.seats })); else localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
+}
+const TV_SAVE = 'hotel-tv-save';
 function loadGame() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
-if (loadGame()) $('resumeBtn').classList.remove('hidden');
+if (NET.mode === 'local' && loadGame()) $('resumeBtn').classList.remove('hidden');
 
 $('startBtn').onclick = () => {
+  if (NET.mode === 'host') return tvStart();
   const players = [];
   for (let i = 0; i < 4; i++) { const k = $('kind' + i).value; if (k === 'none') continue; players.push({ name: $('name' + i).value.trim() || `Seat ${i + 1}`, ai: k === 'human' ? null : k, seat: i }); }
   if (players.length < 2) { toast('Need at least two seats.', 'bad'); return; }
@@ -986,7 +1006,8 @@ $('startBtn').onclick = () => {
 $('resumeBtn').onclick = () => { state = loadGame(); if (state) { state.news = state.news || []; beginGame(); } };
 $('newBtn').onclick = () => {
   clearTimeout(botTimer);
-  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  try { localStorage.removeItem(NET.mode === 'host' ? TV_SAVE : SAVE_KEY); } catch (e) {}
+  if (NET.mode === 'host') { NET.started = false; NET.seq = 0; NET.inbox = []; setTimeout(lobbyChanged, 0); }
   if (view.isDriverView()) setDriver(false);
   finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
   resetBoard(); hideDice(); hideSpinner(); hideLanded(); closeDeeds(); hideProposal(); proposalSeen = null;
@@ -1179,7 +1200,7 @@ async function animateTransfers(ev) {
 // what the computer players are doing, as a little running feed under the player bar
 const BOT_ICON = { buyLand: '£', declare: '⌂', buyEntrance: '⇥', placeEntrance: '⇥', freeBuild: '★', buyFacilities: '≋', bid: '⚖', auctionLot: '⚖', pass: '·', withdraw: '✕' };
 function botNote(a, actor) {
-  if (!actor || !actor.ai) return;
+  if (!actor || mine(actor)) return; // notes for moves made elsewhere: computers, and other players' phones
   const H = id => esc(hname(id)), who = `<b>${esc(actor.name)}</b>`;
   let txt = null, amt = '', hc = null;
   switch (a.type) {
@@ -1271,9 +1292,19 @@ async function finale(winnerId) {
   setTimeout(() => { mine.forEach((id, k) => setTimeout(() => view.fireworks(id, 3), k * 600)); }, mine.length * 900 + 7000);
 }
 
-async function doAction(a) {
+function doAction(a) {
+  if (NET.mode === 'player') { // a phone asks the TV; the move comes back to everyone once the TV has checked it
+    if (acting || !state || NET.waiting || state.winner !== null) return;
+    NET.waiting = true; clearTimeout(NET.waitT); NET.waitT = setTimeout(() => { NET.waiting = false; render(); }, 5000);
+    NET.stats.sent++; netSend({ t: 'act', a, seq: NET.seq }); render(); return;
+  }
+  return runAction(a);
+}
+async function runAction(a) {
   if (acting || !state || state.winner !== null) return;
+  if (a.type === '_setAI') return setAI(a);
   acting = true;
+  if (NET.mode === 'host') netSend({ t: 'act', seq: NET.seq, a });
   const actor = state.players[a.player], moverSeat = actor ? actor.seat : undefined;
   const isRoll = a.type === 'roll', isStay = a.type === 'rollStay', isSpin = a.type === 'spin';
   botNote(a, actor);
@@ -1287,7 +1318,7 @@ async function doAction(a) {
   if (isRoll || isStay) await wait(reduceMotion ? 0 : 700);
   if (isSpin) await wait(reduceMotion ? 0 : 150);
   let ev;
-  try { ev = E.apply(state, BOARD, a); } catch (err) { if (isRoll || isStay) hideDice(); if (isSpin) hideSpinner(); console.error(err); acting = false; render(); tick(); return; }
+  try { ev = E.apply(state, BOARD, a); NET.seq++; } catch (err) { if (isRoll || isStay) hideDice(); if (isSpin) hideSpinner(); console.error(err); acting = false; if (NET.mode === 'player') netRequestSync(); render(); tick(); return; }
   if (isRoll) { const mv = ev.find(e => e.type === 'move'); if (mv) settleDice(mv.roll, `<span class="sw" style="background:${COLS[moverSeat]}"></span>${esc(actor.name)} rolls <b>${mv.roll}</b>${mv.roll === 6 ? ' · extra turn' : ''}`); }
   if (isStay) { const st = ev.find(e => e.type === 'stay'); if (st) settleStay(st); if (st) settleDice(st.nights, `${st.nights} night${st.nights > 1 ? 's' : ''} · <b>${fmt(st.amount)}</b> to ${esc(pname(st.to))}`); await wait(reduceMotion ? 0 : 2400); hideDice(); hideStay(); }
   if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result); await wait(reduceMotion ? 300 : 1300); hideSpinner(); }
@@ -1314,10 +1345,18 @@ async function doAction(a) {
   acting = false;
   render();
   tick();
+  netPump();
+}
+// a computer taking over a player (e.g. their phone has gone), or handing back: part of the move stream, so every screen agrees
+function setAI(a) {
+  if (NET.mode === 'host') netSend({ t: 'act', seq: NET.seq, a });
+  state.players[a.player].ai = a.ai || null; NET.seq++;
+  saveGame(); render(); tick(); netPump();
 }
 
 function tick() {
   clearTimeout(botTimer);
+  if (NET.mode === 'player') return; // computer players are run by the TV
   if (!state || state.winner !== null) return;
   const acts = E.legalActions(state, BOARD);
   const main = acts.filter(a => !a.type.startsWith('claim'));
@@ -1370,7 +1409,7 @@ function render() {
   renderMats(sum);
   renderActions();
   // driver's view rides along with whoever's turn it is
-  if (view.isDriverView()) { const s = state.players[state.current].seat; if (driverSeat !== s) setDriver(true); }
+  if (view.isDriverView()) { const s = driveSeat(); if (driverSeat !== s) setDriver(true); }
   updateSafeArea();
 }
 
@@ -1633,7 +1672,7 @@ function renderActions() {
   const btns = $('btns'), claims = $('claims'), bidRow = $('bidRow'), hint = $('entranceHint');
   btns.innerHTML = ''; claims.innerHTML = ''; claims.classList.add('hidden'); bidRow.classList.add('hidden'); hint.classList.add('hidden');
   const cur = state.players[state.current];
-  $('deedsBtn').classList.toggle('hidden', !(state.winner === null && !cur.ai && cur.active));
+  $('deedsBtn').classList.toggle('hidden', !(state.winner === null && mine(cur) && cur.active));
   if (state.winner !== null) {
     const w = state.players[state.winner];
     $('who').innerHTML = `<span class="sw" style="background:${COLS[w.seat]}"></span><div>${esc(w.name)} wins!<small>Start a new game from Table options.</small></div>`;
@@ -1646,7 +1685,8 @@ function renderActions() {
   const actor = state.players[main[0].player];
   const phaseText = { roll: 'to roll', stay: 'is a guest', townHall: 'may buy entrances', buy: 'is on a buying space', build: 'is on a planning permission space', spin: 'spins for permission', freeEntrance: 'is on the free entrance space', freeBuild: 'is on build one phase free', end: 'may buy leisure facilities, or end the turn', raise: 'must sell something to pay a debt', auction: 'to bid' }[state.phase] || state.phase;
   $('who').innerHTML = `<span class="sw" style="background:${COLS[actor.seat]}"></span><div>${esc(actor.name)}<small>${phaseText}${state.phase === 'auction' ? (state.auction.highBidder !== null ? ' · highest bid ' + fmt(state.auction.high) + ' by ' + esc(state.players[state.auction.highBidder].name) : ' · reserve ' + fmt(state.auction.reserve || 0)) : ''}</small></div>`;
-  const human = !acting && !actor.ai;
+  const human = !acting && !NET.waiting && mine(actor);
+  if (NET.mode === 'player' && human) { const k = state.turn + '|' + state.phase + '|' + main.length; if (k !== NET.lastBuzz) { NET.lastBuzz = k; try { navigator.vibrate && navigator.vibrate([90, 60, 90]); } catch (e) {} } }
   if (state.phase === 'stay' && state.pending && state.pending.hotel) showStay(); else if (!acting) hideStay();
   // the die and the spinner are the controls for rolling and spinning
   const rollA = main.find(a => a.type === 'roll' || a.type === 'rollStay'), spinA = main.find(a => a.type === 'spin');
@@ -1667,8 +1707,8 @@ function renderActions() {
     view.onPickSpace((space, hotel) => { const a = spaceActions.find(x => x.space === space && x.hotel === hotel); if (a) doAction(a); });
     hint.classList.remove('hidden');
   } else view.clearEntranceChoices();
-  if (acting) { const b = document.createElement('div'); b.className = 'thinking'; b.textContent = '…'; btns.appendChild(b); }
-  else if (!actor.ai) {
+  if (acting || NET.waiting) { const b = document.createElement('div'); b.className = 'thinking'; b.textContent = '…'; btns.appendChild(b); }
+  else if (mine(actor)) {
     const drawn = renderChoices(actor, main, spaceActions, btns);
     for (const a of (drawn ? main.filter(a => ['roll', 'rollStay', 'spin'].includes(a.type)) : main).filter(a => a.type !== 'withdraw')) {
       if (a.type === 'declare') continue;
@@ -1690,7 +1730,8 @@ function renderActions() {
       b.onclick = () => doAction(a);
       btns.appendChild(b);
     }
-  } else { const b = document.createElement('div'); b.className = 'thinking'; b.textContent = 'Thinking…'; btns.appendChild(b); }
+  } else if (actor.ai) { const b = document.createElement('div'); b.className = 'thinking'; b.textContent = 'Thinking…'; btns.appendChild(b); }
+  else netWaitingFor(actor, btns);
   // a human with a real decision (not just the die or spinner): open the options and make them stand out
   const decision = human && main.some(a => !['roll', 'rollStay', 'spin', 'withdraw'].includes(a.type));
   $('turnCard').classList.toggle('attention', decision);
@@ -1708,12 +1749,12 @@ function renderActions() {
   if (cl.length) {
     claims.classList.remove('hidden');
     claims.innerHTML = `<div class="k">Unclaimed — lost when the next player rolls</div>`;
-    for (const a of cl) { const b = document.createElement('button'); b.textContent = `${state.players[a.player].name}: ${E.describeAction(a, state, BOARD)}`; if (state.players[a.player].ai || acting) b.disabled = true; b.onclick = () => doAction(a); claims.appendChild(b); }
+    for (const a of cl) { const b = document.createElement('button'); b.textContent = `${state.players[a.player].name}: ${E.describeAction(a, state, BOARD)}`; if (!mine(state.players[a.player]) || acting) b.disabled = true; b.onclick = () => doAction(a); claims.appendChild(b); }
   }
 }
 
 // ---------------------------------------------------------------- title deeds: any deed not held by another player, on your own turn
-function deedViewer() { if (!state || state.winner !== null) return null; const p = state.players[state.current]; return p && !p.ai && p.active ? p : null; }
+function deedViewer() { if (!state || state.winner !== null) return null; const p = NET.mode === 'player' ? state.players[NET.me] : state.players[state.current]; return p && mine(p) && p.active ? p : null; }
 function titleDeed(id, viewer) {
   const h = BOARD.hotels[id], plot = state.plots[id], c = SCENERY.landColours[id], n = h.stages.length - 1;
   const ents = Object.values(state.entrances).filter(x => x === id).length;
@@ -1932,8 +1973,9 @@ function fitTvSpace() { const tv = $('tv'); const h = (!tvMoved && innerWidth > 
 
 // ---------------------------------------------------------------- camera dock
 let driverSeat = null;
+const driveSeat = () => NET.mode === 'player' && NET.me !== null && state.players[NET.me] ? state.players[NET.me].seat : state.players[state.current].seat;
 function setDriver(on) {
-  if (on && state) { driverSeat = state.players[state.current].seat; view.setDriverView(driverSeat); }
+  if (on && state) { driverSeat = driveSeat(); view.setDriverView(driverSeat); }
   else { driverSeat = null; view.setDriverView(null); }
   $('camDrive').classList.toggle('on', !!on); $('camDrive').setAttribute('aria-pressed', !!on);
 }
@@ -2016,9 +2058,267 @@ async function start() {
   setInterval(renderClock, 2000);
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
-  window._debug = { get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
+  netInit();
+  window._debug = { NET, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
   // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
   ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
+// ================================================================ multi-screen play (TV + phones)
+// Lockstep: the engine is deterministic, so every screen keeps its own copy of the game and applies the same moves in
+// the same order. The TV (host) is the referee: it checks each move a phone asks for, runs the computer players, and
+// broadcasts every move with a sequence number. Phones apply moves strictly in order and ask for a snapshot if they
+// ever miss one (joining late, reconnecting, waking from sleep). The relay (src/worker.js) just passes messages.
+const RELAY_HOME = 'https://hotel-game.josephsammorris.workers.dev';
+const relayHere = /(^|\.)workers\.dev$|^localhost$|^127\.0\.0\.1$/.test(location.hostname);
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const cleanName = s => String(s || '').replace(/[<>&"]/g, '').trim().slice(0, 16);
+function newCode() { let c = ''; for (const x of crypto.getRandomValues(new Uint32Array(4))) c += CODE_CHARS[x % CODE_CHARS.length]; return c; }
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+function netSend(m) { if (NET.ws && NET.ws.readyState === 1) { NET.ws.send(JSON.stringify(m)); return true; } return false; }
+function netConnect() {
+  clearTimeout(NET.rt);
+  const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${NET.code}?role=${NET.mode === 'host' ? 'host' : 'player'}&id=${encodeURIComponent(NET.id)}`;
+  let ws; try { ws = new WebSocket(url); } catch (e) { return netRetry(); }
+  NET.ws = ws;
+  ws.onopen = () => { if (NET.ws !== ws) return; NET.open = true; NET.retry = 0; netStatus(); if (NET.mode === 'player') netHello(); };
+  ws.onmessage = e => { if (NET.ws !== ws || e.data === 'pong') return; let m; try { m = JSON.parse(e.data); } catch (er) { return; } if (NET.mode === 'host') hostMsg(m); else phoneMsg(m); };
+  ws.onclose = ev => { if (NET.ws !== ws) return; NET.open = false; NET.hostOn = false; netStatus(); if (ev.code === 4000) { netStatus('This game is now open on another screen.'); return; } netRetry(); };
+  ws.onerror = () => {};
+}
+function netRetry() { clearTimeout(NET.rt); NET.retry = Math.min(6, (NET.retry || 0) + 1); NET.rt = setTimeout(netConnect, [0, 400, 1000, 2000, 3000, 5000, 8000][NET.retry]); }
+setInterval(() => { if (NET.ws && NET.ws.readyState === 1) NET.ws.send('ping'); }, 25000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || NET.mode === 'local' || !NET.code) return;
+  if (!NET.ws || NET.ws.readyState > 1) { NET.retry = 0; netConnect(); }
+  if (NET.mode === 'player') { netWakeLock(); if (state) netRequestSync(); }
+});
+async function netWakeLock() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible') NET.lock = await navigator.wakeLock.request('screen'); } catch (e) {} }
+
+// a little status strip: connecting / waiting for the TV / room code
+function netStatus(text) {
+  const el = $('netBar'); if (!el || NET.mode === 'local') return;
+  let t = text || '';
+  if (!t) {
+    if (!NET.open) t = 'Connecting…';
+    else if (NET.mode === 'player' && !NET.hostOn) t = 'Waiting for the TV to come back…';
+  }
+  el.textContent = t; el.classList.toggle('hidden', !t);
+}
+
+// ---------------------------------------------------------------- the TV
+function lobbyMsg() {
+  return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
+}
+function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); if (state) render(); }
+function hostMsg(m) {
+  if (m.t === 'welcome') { (m.players || []).forEach(id => { NET.online[id] = true; }); lobbyChanged(); if (NET.started && state) netSend({ t: 'snap', seq: NET.seq, state }); return; }
+  if (m.t === 'join') {
+    NET.online[m.id] = true;
+    if (NET.started && state) { NET.snaps.add(m.id); const p = state.players.find(q => q.phone === m.id); if (p && p.ai && NET.takeover.has(p.id)) NET.handback.push(p.id); netPump(); }
+    lobbyChanged(); return;
+  }
+  if (m.t === 'leave') { NET.online[m.id] = false; lobbyChanged(); return; }
+  if (m.t !== 'from') return;
+  const id = m.id, x = m.m || {};
+  if (x.t === 'hello') return seatPhone(id, x);
+  if (x.t === 'leaveSeat' && !NET.started) { NET.seats = NET.seats.map(s => s && s.kind === 'phone' && s.id === id ? null : s); lobbyChanged(); return; }
+  if (x.t === 'start' && !NET.started) return tvStart();
+  if (x.t === 'sync' && state) { NET.snaps.add(id); netPump(); return; }
+  if (x.t === 'act' && NET.started && state) { NET.inbox.push({ id, a: x.a }); netPump(); }
+}
+function seatPhone(id, x) {
+  const name = cleanName(x.name) || 'Player';
+  if (NET.started) { netSend(Object.assign(lobbyMsg(), { to: id })); return; } // mid-game: rejoining players get a snapshot via 'join'
+  let at = NET.seats.findIndex(s => s && s.kind === 'phone' && s.id === id);
+  const want = Number.isInteger(x.seat) && x.seat >= 0 && x.seat < 4 && !(NET.seats[x.seat] && NET.seats[x.seat].kind === 'phone' && NET.seats[x.seat].id !== id) ? x.seat : -1;
+  if (want >= 0 && want !== at) { if (at >= 0) NET.seats[at] = null; at = want; }
+  if (at < 0) at = NET.seats.findIndex(s => !s || s.kind !== 'phone');
+  if (at < 0) { netSend({ t: 'full', to: id }); return; }
+  NET.seats[at] = { kind: 'phone', id, name };
+  lobbyChanged();
+}
+function tvStart() {
+  const list = NET.seats.map((s, i) => s ? Object.assign({ seat: i }, s) : null).filter(Boolean);
+  if (list.length < 2) { toast('Need at least two seats: join with phones, or add computer players.', 'bad'); return; }
+  const players = list.map(s => ({ name: s.name, ai: s.kind === 'computer' ? 'easy' : null, seat: s.seat }));
+  state = E.createGame(BOARD, { players, autoClaim: !$('claimMode').checked });
+  state.players.forEach((p, i) => { p.seat = list[i].seat; if (list[i].kind === 'phone') p.phone = list[i].id; });
+  state.news = []; NET.seq = 0; NET.started = true; NET.inbox = []; NET.snaps.clear(); NET.takeover.clear(); NET.handback = [];
+  beginGame();
+  addStories([{ k: 'Good evening', h: 'A new day for the Hotel strip', s: `${state.players.length} tycoons start with ${fmt(12000)} each. ${pname(state.current)} goes first.` }]);
+  netSend({ t: 'snap', seq: NET.seq, state }); lobbyChanged(); saveGame();
+}
+// the move a phone asks for, checked against the rules (and that it's that phone's player)
+function netLegal(a, id) {
+  if (!a || typeof a !== 'object' || !state || state.winner !== null) return null;
+  const p = state.players[a.player]; if (!p || p.phone !== id || p.ai) return null;
+  const acts = E.legalActions(state, BOARD);
+  if (a.type === 'bid') { const l = acts.find(x => x.type === 'bid' && x.player === a.player), amt = Math.round(+a.amount); return l && amt >= l.min && amt <= l.max ? { type: 'bid', player: a.player, amount: amt } : null; }
+  return acts.find(l => l.type === a.type && Object.keys(l).every(k => JSON.stringify(l[k]) === JSON.stringify(a[k]))) || null;
+}
+function netWaitingFor(actor, btns) {
+  const d = document.createElement('div'); d.className = 'thinking';
+  if (NET.mode === 'host') {
+    const on = !!NET.online[actor.phone];
+    d.textContent = on ? `Waiting for ${actor.name}'s phone…` : `${actor.name}'s phone has disconnected — waiting for it to come back.`;
+    btns.appendChild(d);
+    if (!on && !acting) { const b = document.createElement('button'); b.className = 'quiet'; b.textContent = `Let the computer play for ${actor.name}`; b.onclick = () => { if (acting) return; NET.takeover.add(actor.id); runAction({ type: '_setAI', player: actor.id, ai: 'easy' }); }; btns.appendChild(b); }
+  } else { d.textContent = `${actor.name} is deciding…`; btns.appendChild(d); }
+}
+
+// ---------------------------------------------------------------- the phones
+function netHello() { netSend({ t: 'hello', name: lsGet('hotelPhoneName') || '', seat: NET.wantSeat }); }
+function netRequestSync() { clearTimeout(NET.syncT); NET.syncT = setTimeout(() => netSend({ t: 'sync' }), 50); }
+function phoneMsg(m) {
+  if (m.t === 'welcome') { NET.hostOn = !!m.host; netStatus(); return; }
+  if (m.t === 'host') { NET.hostOn = !!m.on; netStatus(); if (m.on) netHello(); return; }
+  if (m.t === 'lobby') {
+    NET.lobby = m; NET.hostOn = true; netStatus();
+    if (!m.started && NET.inGame) phoneBackToLobby();
+    renderPhoneLobby();
+    if (m.started && !NET.inGame) netRequestSync();
+    return;
+  }
+  if (m.t === 'snap') return adoptSnap(m);
+  if (m.t === 'act') { if (!NET.inGame) return; NET.q.push(m); NET.q.sort((x, y) => x.seq - y.seq); netPump(); return; }
+  if (m.t === 'nack') { NET.stats.nack++; NET.waiting = false; clearTimeout(NET.waitT); if (!acting && state) { if (m.seq !== NET.seq) netRequestSync(); render(); } return; }
+  if (m.t === 'full') toast('This game already has four players.', 'bad');
+}
+function adoptSnap(m) {
+  if (acting) { NET.pendingSnap = m; return; }
+  NET.pendingSnap = null; NET.stats.snap++;
+  const first = !NET.inGame;
+  state = m.state; state.news = state.news || [];
+  NET.seq = m.seq; NET.q = NET.q.filter(x => x.seq >= m.seq); NET.waiting = false; NET.started = true;
+  NET.me = state.players.findIndex(p => p.phone === NET.id); if (NET.me < 0) NET.me = null;
+  if (first) {
+    NET.inGame = true; beginGame(); netWakeLock();
+    if (NET.me !== null) setTimeout(() => { if (state && !view.isDriverView()) setDriver(true); }, 1600);
+  } else { resetBoard(); syncAll(false); render(); }
+  netPump();
+}
+function phoneBackToLobby() {
+  NET.inGame = false; NET.started = false; NET.q = []; NET.me = null;
+  if (view.isDriverView()) setDriver(false);
+  finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
+  resetBoard(); hideDice(); hideSpinner(); hideLanded(); closeDeeds(); hideProposal(); proposalSeen = null;
+  $('gamePanel').classList.add('hidden'); $('setupPanel').classList.remove('hidden'); $('camDock').classList.add('hidden'); hideMats();
+  state = null; view.flyTo('home');
+}
+
+// both: apply whatever is waiting, once nothing is animating
+function netPump() {
+  if (NET.mode === 'host') {
+    if (acting || !state) return;
+    if (NET.snaps.size) { for (const id of NET.snaps) netSend({ t: 'snap', to: id, seq: NET.seq, state }); NET.snaps.clear(); }
+    if (NET.handback.length) { const pid = NET.handback.shift(); NET.takeover.delete(pid); if (state.players[pid].ai) { runAction({ type: '_setAI', player: pid, ai: null }); return; } }
+    while (NET.inbox.length && !acting) {
+      const { id, a } = NET.inbox.shift(), l = netLegal(a, id);
+      if (l) { runAction(l); return; }
+      NET.stats.nack++; netSend({ t: 'nack', to: id, seq: NET.seq });
+    }
+  } else if (NET.mode === 'player') {
+    if (acting) return;
+    if (NET.pendingSnap) return adoptSnap(NET.pendingSnap);
+    if (!state) return;
+    while (NET.q.length && NET.q[0].seq < NET.seq) NET.q.shift();
+    const nx = NET.q[0]; if (!nx) return;
+    if (nx.seq > NET.seq) { netRequestSync(); return; } // missed a move: ask for the whole game
+    NET.q.shift(); NET.waiting = false; clearTimeout(NET.waitT);
+    runAction(nx.a);
+  }
+}
+
+// ---------------------------------------------------------------- lobby screens
+function loadQR() {
+  return new Promise(res => {
+    if (window.qrcode) return res(window.qrcode);
+    const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js';
+    s.onload = () => res(window.qrcode || null); s.onerror = () => res(null); document.head.appendChild(s);
+  });
+}
+const joinURL = () => `${location.origin}${location.pathname}?join=${NET.code}`;
+function renderTvLobby() {
+  const box = $('lobby'); if (!box || NET.mode !== 'host') return;
+  $('lobbyCode').textContent = NET.code; $('lobbyUrl').textContent = joinURL().replace(/^https?:\/\//, '');
+  const rows = NET.seats.map((s, i) => {
+    const sw = `<span class="sw" style="background:${COLS[i]}"></span>`;
+    if (s && s.kind === 'phone') return `<div class="lseat">${sw}<b>${esc(s.name)}</b><span class="lst ${NET.online[s.id] ? 'on' : 'off'}">${NET.online[s.id] ? 'phone connected' : 'phone disconnected'}</span>${NET.started ? '' : `<button class="quiet lkick" data-seat="${i}">Remove</button>`}</div>`;
+    return `<div class="lseat">${sw}<select data-seat="${i}" ${NET.started ? 'disabled' : ''}><option value="empty">Empty — waiting for a phone</option><option value="computer" ${s && s.kind === 'computer' ? 'selected' : ''}>Computer player</option></select></div>`;
+  }).join('');
+  $('lobbySeats').innerHTML = rows;
+  $('lobbySeats').querySelectorAll('select').forEach(el => el.onchange = () => {
+    const i = +el.dataset.seat; NET.seats[i] = el.value === 'computer' ? { kind: 'computer', name: `Computer ${NET.seats.filter(x => x && x.kind === 'computer').length + 1}` } : null; lobbyChanged();
+  });
+  $('lobbySeats').querySelectorAll('.lkick').forEach(el => el.onclick = () => { NET.seats[+el.dataset.seat] = null; lobbyChanged(); });
+  const filled = NET.seats.filter(Boolean).length;
+  $('startBtn').disabled = filled < 2;
+  $('lobbyNote').textContent = filled < 2 ? 'Scan the code with each player\'s phone, or add computer players.' : `${filled} players ready. Start when everyone's in — or start from any phone.`;
+}
+function renderPhoneLobby() {
+  if (NET.mode !== 'player') return;
+  const L = NET.lobby, mineAt = L ? L.seats.findIndex(s => s.kind === 'phone' && s.id === NET.id) : -1;
+  $('phoneCode').textContent = NET.code;
+  $('phoneSeats').innerHTML = (L ? L.seats : [0, 1, 2, 3].map(() => ({ kind: 'empty' }))).map((s, i) => {
+    const taken = s.kind === 'phone' && s.id !== NET.id;
+    const label = s.kind === 'phone' ? esc(s.name) + (s.id === NET.id ? ' (you)' : '') : s.kind === 'computer' ? esc(s.name) : 'Free seat';
+    return `<button class="pseat ${i === mineAt ? 'me' : ''}" data-seat="${i}" ${taken || NET.started ? 'disabled' : ''} style="--pc:${COLS[i]}"><span class="sw" style="background:${COLS[i]}"></span>${label}</button>`;
+  }).join('');
+  $('phoneSeats').querySelectorAll('.pseat').forEach(b => b.onclick = () => { NET.wantSeat = +b.dataset.seat; lsSet('hotelPhoneName', cleanName($('phoneName').value)); netHello(); Sound.ui('click'); });
+  const joined = mineAt >= 0, filled = L ? L.seats.filter(s => s.kind !== 'empty').length : 0;
+  $('phoneJoin').textContent = joined ? 'Update name' : 'Join the game';
+  $('phoneStart').classList.toggle('hidden', !joined);
+  $('phoneStart').disabled = filled < 2 || !NET.hostOn;
+  $('phoneNote').textContent = !NET.open ? 'Connecting…' : !NET.hostOn ? 'Waiting for the TV — open the game on the TV screen first.' : NET.started ? 'A game is in progress on this TV.' : joined ? (filled < 2 ? 'You\'re in. Waiting for more players…' : 'You\'re in. Start when everyone has joined.') : 'Type your name, pick a colour, then join.';
+}
+
+// ---------------------------------------------------------------- start-up for each mode
+function netInit() {
+  const lead = $('setupPanel').querySelector('.lead');
+  if (NET.mode === 'local') {
+    const b = document.createElement('button'); b.id = 'tvModeBtn'; b.textContent = '📺 Play on a TV with phones';
+    b.onclick = () => { const url = (relayHere ? location.origin + location.pathname : RELAY_HOME + '/') + '?tv'; if (relayHere) location.href = url; else window.open(url, '_blank'); };
+    $('startBtn').parentElement.appendChild(b);
+    return;
+  }
+  if (!relayHere) { lead.textContent = 'Playing with phones needs the online version of the game.'; return; }
+  document.body.classList.add(NET.mode === 'host' ? 'tvMode' : 'phoneMode');
+  $('seats').closest('.card').classList.add('hidden');
+  if (NET.mode === 'host') {
+    NET.id = 'tv'; NET.code = (QS.get('tv') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || lsGet('hotelRoom') || newCode(); lsSet('hotelRoom', NET.code);
+    NET.takeover = new Set(); NET.handback = [];
+    lead.textContent = 'Everyone plays on their own phone while the board shows here. Scan the code to join; fill any empty seats with computer players.';
+    const card = document.createElement('div'); card.className = 'card'; card.id = 'lobby';
+    card.innerHTML = `<h2>Join on your phone</h2><div class="lobbyTop"><div class="qr" id="lobbyQR"></div><div><div class="note">Room code</div><div class="lobbyCode" id="lobbyCode"></div><div class="note">or go to</div><div class="lobbyUrl" id="lobbyUrl"></div></div></div><div id="lobbySeats" class="lobbySeats"></div><p class="note" id="lobbyNote"></p>`;
+    $('seats').closest('.card').after(card);
+    loadQR().then(q => { if (!q) { $('lobbyQR').classList.add('hidden'); return; } const qr = q(0, 'M'); qr.addData(joinURL()); qr.make(); $('lobbyQR').innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true }); });
+    const saved = (() => { try { return JSON.parse(lsGet(TV_SAVE) || 'null'); } catch (e) { return null; } })();
+    $('resumeBtn').classList.add('hidden');
+    renderTvLobby();
+    // the TV page reloaded mid-game: carry straight on (phones rejoin and get the game sent to them)
+    if (saved && saved.state && saved.state.winner === null) {
+      state = saved.state; state.news = state.news || []; NET.seq = saved.seq || 0; NET.seats = saved.seats || NET.seats; NET.started = true; NET.inbox = []; NET.handback = [];
+      beginGame();
+    }
+  } else {
+    NET.id = lsGet('hotelPhoneId') || ('p' + newCode() + newCode()); lsSet('hotelPhoneId', NET.id);
+    NET.code = QS.get('join').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+    if (!lsGet('hotelPhoneSound')) { lsSet('hotelPhoneSound', '1'); Sound.set('music', false); } // the TV plays the music
+    lead.textContent = 'Your phone is your seat at the table: your view of the board, your money and your decisions.';
+    const card = document.createElement('div'); card.className = 'card'; card.id = 'phoneLobby';
+    card.innerHTML = `<h2>Game <span id="phoneCode"></span></h2><label class="pname">Your name <input type="text" id="phoneName" maxlength="16" placeholder="Your name"></label><div class="note">Choose your colour</div><div id="phoneSeats" class="phoneSeats"></div><div class="row"><button class="primary" id="phoneJoin">Join the game</button><button id="phoneStart" class="hidden">Start game</button></div><p class="note" id="phoneNote"></p>`;
+    $('seats').closest('.card').after(card);
+    $('phoneName').value = lsGet('hotelPhoneName') || '';
+    $('phoneJoin').onclick = () => { const n = cleanName($('phoneName').value); if (!n) { toast('Type your name first.', 'bad'); $('phoneName').focus(); return; } lsSet('hotelPhoneName', n); Sound.init(); netHello(); Sound.ui('click'); };
+    $('phoneStart').onclick = () => { netSend({ t: 'start' }); Sound.ui('click'); };
+    $('startBtn').classList.add('hidden'); $('resumeBtn').classList.add('hidden'); $('claimMode').closest('label').classList.add('hidden');
+    $('newBtn').classList.add('hidden');
+    renderPhoneLobby();
+  }
+  netStatus(); netConnect();
+}
+
 start();
 </script>

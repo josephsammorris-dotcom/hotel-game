@@ -1,9 +1,16 @@
-// Cloudflare Workers config: serves the built game (dist/) as a static site.
-// The relay for TV + phones play will be added here later as a Worker script.
+// Cloudflare Workers config.
+//  - dist/ is served as a static site (the game page)
+//  - src/worker.js handles /ws/<CODE>: the relay between the TV and the phones, one Durable Object per room
 {
   "name": "hotel-game",
+  "main": "src/worker.js",
   "compatibility_date": "2026-10-01",
   "assets": {
-    "directory": "./dist"
-  }
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
 }

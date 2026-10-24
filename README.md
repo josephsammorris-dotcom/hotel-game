@@ -19,6 +19,22 @@ current phone, tablet and computer has. Progress is saved in the browser after e
 *Full*, *Lite* and *Low* fix the look. Table options → Advanced has a frame-rate counter and individual
 performance switches for testing.
 
+## Playing on a TV with phones
+
+1. On the computer connected to the TV, open **https://hotel-game.josephsammorris.workers.dev/?tv**
+   (or press *Play on a TV with phones* on the start screen).
+2. Each player scans the QR code (or types the address shown) on their phone, enters a name and picks a colour.
+3. Fill any empty seats with computer players on the TV, then press **Start game** on the TV or any phone.
+
+The board, dice, spinner and music play on the TV. Each phone follows its own car and shows that player's money,
+deeds and decisions. A phone that locks or loses signal rejoins its seat when reopened; if one disappears for good,
+the TV can let a computer play that seat until it's back. If the TV page is reloaded, the game carries on.
+
+How it works: the rules engine is deterministic, so every screen runs its own copy of the game and applies the
+same moves in the same order. The TV is the referee: it checks each move a phone asks for, runs the computer
+players, and broadcasts every move. `src/worker.js` is the relay: a Cloudflare Durable Object per room code that
+passes messages between the TV and the phones.
+
 ## Project layout
 
 | Path | What it is |
@@ -29,6 +45,7 @@ performance switches for testing.
 | `src/board3d.js` | The 3D board: models, cars, weather, day/night, fireworks, performance tiers |
 | `src/sound.js`, `src/sound-assets.js` | Music and sound effects (recorded samples embedded as data) |
 | `src/game.template.html` | The page: interface, game flow, and placeholders the build fills in |
+| `src/worker.js` | Cloudflare Worker: serves the game and runs the TV-to-phones relay (one Durable Object per room) |
 | `build.py` | Inlines everything into `dist/index.html` |
 | `tests/tests.js` | Rules tests |
 | `tests/sim.js` | Plays thousands of computer-vs-computer games checking the rules never break |
