@@ -9,6 +9,9 @@ self-contained page, `dist/index.html`, so it can be opened locally or hosted an
 
 ## Playing
 
+Play online: **https://hotel-game.josephsammorris.workers.dev**
+
+
 Open `dist/index.html` in a modern browser (Chrome, Edge, Safari or Firefox). It needs WebGL2, which every
 current phone, tablet and computer has. Progress is saved in the browser after every move.
 
