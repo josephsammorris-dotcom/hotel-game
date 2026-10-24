@@ -1,0 +1,9 @@
+// Cloudflare Workers config: serves the built game (dist/) as a static site.
+// The relay for TV + phones play will be added here later as a Worker script.
+{
+  "name": "hotel-game",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist"
+  }
+}

@@ -42,6 +42,11 @@ node tests/sim.js 1000    # 1,000 simulated games
 
 Or with npm: `npm run build`, `npm test`.
 
+## Hosting
+
+`wrangler.jsonc` configures Cloudflare Workers to serve `dist/` as a static site. With the repository connected
+in Cloudflare (Workers & Pages → Create application → GitHub), every push to `main` is deployed automatically.
+
 ## Credits
 
 Sound sources and licences are listed in-game (Table options → Sound credits) and in `src/sound.js`.
