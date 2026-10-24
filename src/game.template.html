@@ -2113,10 +2113,12 @@ function lobbyMsg() {
   return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
 }
 function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); if (state) render(); }
+// the sky (weather + time of day) is the TV's: sent with every snapshot, every few seconds, and whenever it changes
+function netEnv(to) { if (NET.mode !== 'host' || !view) return; const m = { t: 'env', e: view.envState() }; if (to) m.to = to; netSend(m); }
 function hostMsg(m) {
   if (m.t === 'welcome') { (m.players || []).forEach(id => { NET.online[id] = true; }); lobbyChanged(); if (NET.started && state) netSend({ t: 'snap', seq: NET.seq, state }); return; }
   if (m.t === 'join') {
-    NET.online[m.id] = true;
+    NET.online[m.id] = true; netEnv(m.id);
     if (NET.started && state) { NET.snaps.add(m.id); const p = state.players.find(q => q.phone === m.id); if (p && p.ai && NET.takeover.has(p.id)) NET.handback.push(p.id); netPump(); }
     lobbyChanged(); return;
   }
@@ -2183,6 +2185,7 @@ function phoneMsg(m) {
     return;
   }
   if (m.t === 'snap') return adoptSnap(m);
+  if (m.t === 'env') { view.followEnv(m.e); return; }
   if (m.t === 'act') { if (!NET.inGame) return; NET.q.push(m); NET.q.sort((x, y) => x.seq - y.seq); netPump(); return; }
   if (m.t === 'nack') { NET.stats.nack++; NET.waiting = false; clearTimeout(NET.waitT); if (!acting && state) { if (m.seq !== NET.seq) netRequestSync(); render(); } return; }
   if (m.t === 'full') toast('This game already has four players.', 'bad');
@@ -2213,7 +2216,7 @@ function phoneBackToLobby() {
 function netPump() {
   if (NET.mode === 'host') {
     if (acting || !state) return;
-    if (NET.snaps.size) { for (const id of NET.snaps) netSend({ t: 'snap', to: id, seq: NET.seq, state }); NET.snaps.clear(); }
+    if (NET.snaps.size) { for (const id of NET.snaps) { netSend({ t: 'snap', to: id, seq: NET.seq, state }); netEnv(id); } NET.snaps.clear(); }
     if (NET.handback.length) { const pid = NET.handback.shift(); NET.takeover.delete(pid); if (state.players[pid].ai) { runAction({ type: '_setAI', player: pid, ai: null }); return; } }
     while (NET.inbox.length && !acting) {
       const { id, a } = NET.inbox.shift(), l = netLegal(a, id);
@@ -2298,6 +2301,7 @@ function netInit() {
     const saved = (() => { try { return JSON.parse(lsGet(TV_SAVE) || 'null'); } catch (e) { return null; } })();
     $('resumeBtn').classList.add('hidden');
     renderTvLobby();
+    view.onEnv(() => netEnv()); setInterval(() => netEnv(), 5000);
     // the TV page reloaded mid-game: carry straight on (phones rejoin and get the game sent to them)
     if (saved && saved.state && saved.state.winner === null) {
       state = saved.state; state.news = state.news || []; NET.seq = saved.seq || 0; NET.seats = saved.seats || NET.seats; NET.started = true; NET.inbox = []; NET.handback = [];
@@ -2316,6 +2320,9 @@ function netInit() {
     $('phoneStart').onclick = () => { netSend({ t: 'start' }); Sound.ui('click'); };
     $('startBtn').classList.add('hidden'); $('resumeBtn').classList.add('hidden'); $('claimMode').closest('label').classList.add('hidden');
     $('newBtn').classList.add('hidden');
+    // the TV sets the sky for everyone
+    for (const id of ['timeSel', 'wxSel']) $(id).closest('label').classList.add('hidden');
+    const skyNote = document.createElement('p'); skyNote.className = 'note'; skyNote.textContent = 'Weather and time of day follow the TV.'; $('wxSel').closest('label').after(skyNote);
     renderPhoneLobby();
   }
   netStatus(); netConnect();

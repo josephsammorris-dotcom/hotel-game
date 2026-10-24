@@ -1747,6 +1747,17 @@ function createBoard3D(deps, container, board, scenery, opts) {
     return { hour: h, weather: env.weather, label: WEATHER[env.weather].label, temp, night: 1 - smooth(-0.05, 0.28, Math.sin((h - 6) / 12 * Math.PI)), timeMode: env.timeMode, weatherMode: env.weatherMode, rain: wcur.rain, wind: wcur.wind };
   }
   function setTimeMode(m) { env.timeMode = m; const fixed = { day: 12.5, dusk: 19.4, night: 23.5, dawn: 6.2 }[m]; if (fixed !== undefined) env.target = fixed; else env.target = undefined; emitEnv(); }
+  // multi-screen play: the TV's sky is the one everybody sees. envState() is what the TV sends; followEnv() makes a
+  // phone match it (it stops picking its own weather; the clock keeps running at the same rate and is nudged back in line).
+  function envState() { return { hour: env.hour, timeMode: env.timeMode, target: env.target, weather: env.weather }; }
+  function followEnv(e) {
+    if (!e || !WEATHER[e.weather]) return;
+    const changed = env.weather !== e.weather || env.timeMode !== e.timeMode;
+    env.weatherMode = 'remote'; env.weather = e.weather; env.timeMode = e.timeMode; env.target = e.target;
+    let d = e.hour - env.hour; if (d > 12) d -= 24; if (d < -12) d += 24;
+    if (Math.abs(d) > 0.02) env.hour = ((e.hour % 24) + 24) % 24;
+    if (changed) emitEnv();
+  }
   function setWeather(k) { if (k === 'auto') { env.weatherMode = 'auto'; env.nextChange = 90 + rnd() * 90; } else if (WEATHER[k]) { env.weatherMode = 'fixed'; env.weather = k; } emitEnv(); }
 
   // clouds: soft puffs high over the board; their shadows drift across it
@@ -2392,7 +2403,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     _advance(sec) { for (let t = 0; t < sec; t += 1 / 30) simulate(1 / 30); }, // test hook: run the world forward without drawing
     onPerf(fn) { perf.cb = fn; notify(); }, ready, onContextLost(fn) { lostCb = fn; }, perfState: () => ({ mode: perf.mode, tier, profile: liteProfile ? 'lite' : 'full', pr: perf.pr, lite: perf.lite, ceil: perf.ceil, fps: perf.fps, idle: performance.now() > perf.busyUntil, n: perf.n, slow: perf.slow, fast: perf.fast, last: Math.round(perf.lastMs || 0) }),
     _applyProfile: applyProfile, setOptions, setSharpness, setTier, getOptions: () => Object.assign({ lite: liteProfile }, opt), _merged: () => merged.length, _ambK(k) { SIMPLE_AMB = k; }, _upkeep() { labUpkeep(performance.now()); }, _profileFrame() { const t0 = performance.now(); simulate(1 / 30); const t1 = performance.now(); labUpkeep(t1); busyNow(); const t2 = performance.now(); if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(1 / 30); const t3 = performance.now(); return { sim: t1 - t0, upkeep: t2 - t1, render: t3 - t2 }; }, _composer: composer, _renderOnce() { if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(0.016); },
-    getEnv, setTimeMode, setWeather, onEnv(fn) { env.listeners.push(fn); fn(getEnv()); },
+    getEnv, setTimeMode, setWeather, envState, followEnv, onEnv(fn) { env.listeners.push(fn); fn(getEnv()); },
     setInsetLeft(px) { insetLeft = px; resize(); },
     setCar(i, v) { if (cars[i]) cars[i].visible = !!v; },
     onPick(fn) { pickFn = fn; },
