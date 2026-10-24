@@ -1,0 +1,2016 @@
+<meta charset="utf-8">
+<title>Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --table:#2b2724; --glass:rgba(28,26,24,.82); --glass2:rgba(255,255,255,.07); --line:rgba(255,255,255,.14);
+  --ink:#f4efe6; --muted:#b9b0a4; --accent:#e0483f; --gold:#f2c417; --focus:#7fc1f2; --ok:#5cc27a; --warn:#f2c417;
+  --p0:#f2c417; --p1:#3fa34d; --p2:#2f79c9; --p3:#d0342c;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+table{color:inherit;font:inherit;border-collapse:collapse}
+html,body{height:100%}
+body{background:var(--table);color:var(--ink);font:14px/1.45 "Work Sans",system-ui,sans-serif;margin:0;overflow:hidden}
+#stage{position:fixed;inset:0}
+#loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--table);z-index:6;transition:opacity .6s}
+#loading div{font:600 1.1rem "Barlow Condensed",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+#loading.done{opacity:0;pointer-events:none}
+.panel{position:fixed;left:max(16px,env(safe-area-inset-left));top:calc(16px + env(safe-area-inset-top,0px));width:340px;max-height:calc(100% - 32px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow:auto;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:14px;box-shadow:0 18px 50px rgba(0,0,0,.35);z-index:3}
+.eyebrow{font:600 .74rem "Barlow Condensed",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--accent)}
+h1{font:700 1.8rem/1 "Barlow Condensed",sans-serif;text-transform:uppercase;margin:.15rem 0 0;letter-spacing:.02em}
+h2{font:600 .82rem "Barlow Condensed",sans-serif;letter-spacing:.12em;text-transform:uppercase;margin:0 0 8px;color:var(--muted)}
+.lead{color:var(--muted);margin:.35rem 0 0;font-size:.88rem}
+.card{background:var(--glass2);border:1px solid var(--line);border-radius:10px;padding:12px}
+button{font:500 .87rem "Work Sans",sans-serif;color:var(--ink);background:var(--glass2);border:1px solid var(--line);border-radius:8px;padding:8px 11px;cursor:pointer;text-align:left}
+button:hover:not(:disabled){border-color:rgba(255,255,255,.4)}
+button:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:600}
+button.quiet{color:var(--muted)}
+button.on{background:rgba(242,196,23,.18);border-color:rgba(242,196,23,.5)}
+input[type=text],input[type=number],select{font:inherit;color:var(--ink);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+/* setup */
+.seats{display:grid;gap:8px}
+.seat{display:grid;grid-template-columns:16px 1fr 116px;gap:8px;align-items:center}
+.seat .sw{width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
+.seat input,.seat select{width:100%;min-width:0;box-sizing:border-box}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:.85rem;color:var(--muted)}
+.check input{margin-top:3px}
+/* turn */
+.who{font:600 1.25rem "Barlow Condensed",sans-serif;letter-spacing:.03em;display:flex;align-items:center;gap:8px}
+.who .sw{width:13px;height:13px;border-radius:50%}
+.who small{display:block;font:400 .82rem "Work Sans",sans-serif;color:var(--muted);letter-spacing:0;margin-top:2px}
+.btns{display:grid;gap:6px}
+.bid{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:2px}
+.bid input{width:100px;font-family:"JetBrains Mono",monospace}
+.claims{border:1px dashed var(--warn);border-radius:8px;padding:8px 9px;display:grid;gap:6px;font-size:.85rem}
+.claims .k{font-weight:600;color:var(--warn)}
+.thinking{color:var(--muted);font-style:italic;padding:6px 2px}
+/* players */
+.players{display:grid;gap:6px}
+.pl{display:grid;grid-template-columns:12px 1fr auto;gap:9px;align-items:start;padding:7px 9px;border-radius:8px;border:1px solid transparent}
+.pl.now{border-color:var(--focus);background:rgba(127,193,242,.1)}
+.pl.out{opacity:.45}
+.pl .dot{width:12px;height:12px;border-radius:50%;margin-top:3px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
+.pl .name{font-weight:600;font-size:.92rem}
+.pl .cash{font:500 .95rem "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.pl .hot{font-size:.78rem;color:var(--muted);margin-top:1px;line-height:1.3}
+.pl .hot b{color:var(--ink);font-weight:600}
+/* log */
+.log{font:.8rem/1.4 "JetBrains Mono",monospace;background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:8px;padding:8px;max-height:150px;overflow-y:auto;white-space:pre-wrap}
+.log .t{color:var(--focus);font-weight:500}
+.tools{display:flex;flex-wrap:wrap;gap:6px}
+.note{font-size:.76rem;color:var(--muted)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font:600 1rem "Barlow Condensed",sans-serif;letter-spacing:.05em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;z-index:4}
+#toast.show{opacity:1}
+#toggle{display:none}
+.hidden{display:none !important}
+#botFeed{position:fixed;z-index:4;top:calc(var(--barH) + 22px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;width:min(560px,calc(100vw - 24px))}
+.botNote{display:flex;align-items:center;gap:9px;background:rgba(24,22,20,.9);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-left:5px solid var(--pc);border-radius:10px;padding:7px 14px 7px 10px;box-shadow:0 10px 26px rgba(0,0,0,.4);font-size:.9rem;color:var(--ink);animation:noteIn .35s cubic-bezier(.2,1.2,.4,1);transition:opacity .5s,transform .5s;max-width:100%}
+.botNote.out{opacity:0;transform:translateY(-8px)}
+.botNote .ic{flex:none;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;background:var(--hc,#444);color:#fff;font:700 .8rem "Barlow Condensed",sans-serif;text-shadow:0 1px 1px rgba(0,0,0,.4)}
+.botNote b{font-weight:700}
+.botNote .amt{margin-left:auto;padding-left:10px;font:600 .85rem "JetBrains Mono",monospace;color:var(--gold);white-space:nowrap}
+@keyframes noteIn{0%{opacity:0;transform:translateY(-10px) scale(.96)}100%{opacity:1;transform:none}}
+@media (max-width:720px){ #botFeed{top:calc(var(--barH) + 12px + env(safe-area-inset-top,0px));left:auto;right:58px;transform:none;width:calc(100vw - 200px);align-items:flex-end} .botNote{font-size:.78rem;padding:6px 10px 6px 8px} .botNote .amt{display:none} }
+#confirmBox{position:fixed;inset:0;z-index:9;background:rgba(10,8,6,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);display:grid;place-items:center;padding:20px}
+.confirmCard{width:min(380px,calc(100vw - 40px));box-sizing:border-box;background:#fbf7ee;color:#221c14;border-radius:14px;padding:18px 18px 16px;box-shadow:0 30px 70px rgba(0,0,0,.55);border-top:6px solid #c8322b}
+.confirmCard h3{margin:0 0 8px;font:700 1.25rem "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase}
+.confirmCard p{margin:0;font-size:.9rem;line-height:1.45;color:#4a3f31}
+.confirmCard p b{color:#221c14}
+.confirmBtns{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.confirmBtns button{background:#2a2f36;color:#fff;border-color:#2a2f36;font-weight:600}
+.confirmBtns button.danger{background:#c8322b;border-color:#c8322b}
+.credits ul{margin:6px 0 0 16px;padding:0;font-size:.72rem;line-height:1.4}
+.credits summary{cursor:pointer}
+.sndRow{display:flex;align-items:center;gap:6px;flex:1 1 100%}
+.sndRow input[type=range]{flex:1;min-width:60px;accent-color:var(--gold)}
+#camDock #sndMute.on{color:#ff8a80;background:rgba(255,138,128,.15);border-color:rgba(255,138,128,.5)}
+/* player mats: each seat's money and deeds, laid out around the table like the physical game */
+.mat{position:fixed;z-index:3;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:12px;padding:10px 13px;min-width:150px;max-width:268px;box-shadow:0 12px 30px rgba(0,0,0,.35);pointer-events:none}
+.mat.now{border-color:var(--focus);box-shadow:0 0 0 2px rgba(127,193,242,.55),0 12px 30px rgba(0,0,0,.4)}
+.mat.out{opacity:.4}
+.mat .matHead{display:flex;align-items:center;gap:7px;margin-bottom:3px}
+.mat .sw{width:11px;height:11px;border-radius:50%;flex:none;box-shadow:inset 0 0 0 1px rgba(255,255,255,.3)}
+.mat .matName{font:600 .9rem "Barlow Condensed",sans-serif;letter-spacing:.03em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mat .matCash{font:600 1.05rem "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;margin-bottom:5px}
+/* stacks of cash, by denomination, fanned like the real banknotes */
+.mat .cashBills{display:flex;flex-wrap:wrap;gap:8px 8px;margin:4px 0 9px;padding-top:2px}
+.bill{--n1:#2f5f9e;--n2:#6a96cf;--n3:#1d3d68;position:relative;width:52px;height:26px;border-radius:2px;flex:none;overflow:visible;color:#fff;font:700 8px/1 "Barlow Condensed",sans-serif;letter-spacing:.02em;text-shadow:0 1px 1px rgba(0,0,0,.35);
+  background:radial-gradient(ellipse 22% 40% at 72% 50%,rgba(255,255,255,.5),rgba(255,255,255,0) 75%),repeating-radial-gradient(circle at 30% 50%,rgba(255,255,255,.16) 0 .6px,transparent .6px 2.2px),repeating-linear-gradient(115deg,rgba(255,255,255,.07) 0 1px,transparent 1px 3px),linear-gradient(135deg,var(--n1),var(--n2) 55%,var(--n1));
+  border:1px solid var(--n3);box-shadow:inset 0 0 0 2px rgba(255,255,255,.22),inset 0 0 0 3px rgba(0,0,0,.14),0 1px 2px rgba(0,0,0,.4)}
+.bill.s2{box-shadow:inset 0 0 0 2px rgba(255,255,255,.22),inset 0 0 0 3px rgba(0,0,0,.14),2px -2px 0 -1px var(--n2),2px -2px 0 0 var(--n3),0 1px 2px rgba(0,0,0,.4)}
+.bill.s3{box-shadow:inset 0 0 0 2px rgba(255,255,255,.22),inset 0 0 0 3px rgba(0,0,0,.14),2px -2px 0 -1px var(--n2),2px -2px 0 0 var(--n3),4px -4px 0 -1px var(--n2),4px -4px 0 0 var(--n3),0 1px 2px rgba(0,0,0,.4)}
+.bill .crest{position:absolute;left:7%;top:50%;transform:translateY(-50%);width:30%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.35),rgba(255,255,255,.08) 70%);box-shadow:0 0 0 1px rgba(255,255,255,.45);display:grid;place-items:center;font:700 .95em/1 Georgia,serif;font-style:normal;color:rgba(255,255,255,.9)}
+.bill .v{position:absolute;right:7%;top:10%;font-size:1.05em}
+.bill .lbl{position:absolute;left:41%;bottom:12%;font:600 .55em/1 "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;opacity:.8;white-space:nowrap}
+.bill.d1000{--n1:#2b6a4c;--n2:#5fa37c;--n3:#173f2c}
+.bill.d500{--n1:#5d3592;--n2:#9a74c9;--n3:#3a1f60}
+.bill.d100{--n1:#2f5f9e;--n2:#6a96cf;--n3:#1d3d68}
+.bill.d50{--n1:#a95b1c;--n2:#dc9a52;--n3:#6e3a10}
+.bill .n{position:absolute;bottom:-6px;right:-6px;background:#1b120c;color:#fff;border-radius:8px;font:700 7px/1.2 "JetBrains Mono",monospace;padding:1px 4px;box-shadow:0 1px 2px rgba(0,0,0,.45);text-shadow:none;z-index:1}
+/* when a player has a decision to make, the turn card calls for attention */
+#turnCard.attention{border-color:rgba(242,196,23,.75);box-shadow:0 0 0 2px rgba(242,196,23,.35);animation:attn 1.6s ease-out 2}
+#turnCard .yourMove{display:none;font:700 .7rem "Barlow Condensed",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#1b1712;background:var(--gold);border-radius:4px;padding:3px 7px;margin-bottom:8px;width:max-content}
+#turnCard.attention .yourMove{display:block}
+@keyframes attn{0%{box-shadow:0 0 0 0 rgba(242,196,23,.7)}100%{box-shadow:0 0 0 14px rgba(242,196,23,0)}}
+/* deeds, drawn as little property cards like the physical board game */
+.mat .deeds{display:flex;flex-wrap:wrap;gap:4px;max-height:150px;overflow-y:auto}
+.deedCard{width:42px;height:58px;flex:none;border-radius:5px;background:#f4efe6;border:1px solid rgba(0,0,0,.4);box-shadow:0 3px 7px rgba(0,0,0,.4);display:flex;flex-direction:column;overflow:hidden}
+.deedCard.fac{box-shadow:0 3px 7px rgba(0,0,0,.4),0 0 0 2px var(--gold)}
+.deedCard .dTop{height:16px;flex:none;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1;padding:0 2px;font:700 6.2px "Barlow Condensed",sans-serif;letter-spacing:.01em;text-transform:uppercase;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.45)}
+.deedCard .dBody{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.deedCard .dStars{display:flex;gap:2px}
+.deedCard .dStars span{width:4px;height:4px;border-radius:50%;background:rgba(0,0,0,.16)}
+.deedCard .dStars span.on{background:#c9a227;box-shadow:0 0 0 1px rgba(0,0,0,.2)}
+.deedCard .dRate{font:600 6px "JetBrains Mono",monospace;color:#5a5042}
+.mat .noDeeds{font-size:.72rem;color:var(--muted)}
+#matTop{top:calc(14px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%)}
+#matBottom{bottom:calc(14px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%)}
+.matsRight{position:fixed;right:calc(14px + env(safe-area-inset-right,0px));top:50%;transform:translateY(-50%);display:grid;gap:10px;z-index:3;pointer-events:none}
+.matsRight .mat{position:static}
+#playersCard{display:none}
+/* ---------------------------------------------------------------- centre-of-board overlays
+   --insetL is the width the left panel takes, so overlays centre on the board, not the window */
+:root{--insetL:0px;--tvH:0px;--barH:0px}
+#gamePanel{top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-height:calc(100% - var(--barH) - 44px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px))}
+.centerStage{position:fixed;top:46%;left:calc(50% + var(--insetL) / 2);transform:translate(-50%,-50%);z-index:5;text-align:center}
+#toast{left:calc(50% + var(--insetL) / 2);bottom:auto;top:calc(var(--barH) + 30px + env(safe-area-inset-top,0px))}
+.caption{display:inline-block;margin-top:16px;font:700 1rem "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:7px 18px;color:var(--ink);box-shadow:0 10px 24px rgba(0,0,0,.35)}
+.caption .sw{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.caption b{color:var(--gold);font-weight:700}
+
+/* the die: tap it to roll */
+#dice{pointer-events:none}
+#dice.ready{pointer-events:auto}
+.dieBtn{all:unset;display:block;margin:0 auto;width:max-content;cursor:pointer;border-radius:30px;position:relative}
+.dieBtn:focus-visible{outline:3px solid var(--focus);outline-offset:8px}
+#dice:not(.ready) .dieBtn{cursor:default}
+.die{width:118px;height:118px;background:linear-gradient(145deg,#fffaf0,#eee3cf);border-radius:24px;box-shadow:0 22px 40px rgba(0,0,0,.55),inset 0 3px 4px rgba(255,255,255,.9),inset 0 -4px 7px rgba(0,0,0,.16);display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:20px}
+.die .pip{width:19px;height:19px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#4a3226,#1b120c);opacity:0;align-self:center;justify-self:center}
+.die .pip.on{opacity:1}
+.die .pip[data-p=tl]{grid-area:1/1}.die .pip[data-p=tr]{grid-area:1/3}.die .pip[data-p=ml]{grid-area:2/1}.die .pip[data-p=c]{grid-area:2/2}.die .pip[data-p=mr]{grid-area:2/3}.die .pip[data-p=bl]{grid-area:3/1}.die .pip[data-p=br]{grid-area:3/3}
+.halo{position:absolute;inset:-18px;border-radius:40px;border:3px solid rgba(242,196,23,.0);pointer-events:none}
+#dice.ready .die{animation:dieIdle 2.6s ease-in-out infinite}
+#dice.ready .halo{animation:halo 1.8s ease-out infinite}
+#dice.ready .dieBtn:hover .die{animation-play-state:paused;transform:scale(1.07) rotate(-5deg)}
+#dice.rolling .die{animation:dieTumble .42s linear infinite}
+#dice.settled .die{animation:dieLand .4s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes dieIdle{0%,100%{transform:translateY(0) rotate(-6deg)}50%{transform:translateY(-12px) rotate(6deg)}}
+@keyframes halo{0%{border-color:rgba(242,196,23,.7);transform:scale(.85)}100%{border-color:rgba(242,196,23,0);transform:scale(1.2)}}
+@keyframes dieTumble{0%{transform:rotate(0) scale(1)}25%{transform:rotate(95deg) scale(1.14) translateY(-10px)}50%{transform:rotate(180deg) scale(.95)}75%{transform:rotate(275deg) scale(1.1) translateY(-6px)}100%{transform:rotate(360deg) scale(1)}}
+@keyframes dieLand{0%{transform:scale(1.45) rotate(-20deg)}100%{transform:scale(1) rotate(0)}}
+
+/* the planning permission spinner: big, tap it to spin */
+#spinnerBox{pointer-events:none}
+#spinnerBox.ready{pointer-events:auto}
+.spinBtn{all:unset;display:block;margin:0 auto;width:max-content;cursor:pointer;border-radius:50%}
+.spinBtn:focus-visible{outline:3px solid var(--focus);outline-offset:8px}
+#spinnerBox:not(.ready) .spinBtn{cursor:default}
+.dial{--d:min(62vmin,380px);width:var(--d);height:var(--d);border-radius:50%;position:relative;margin:0 auto;background:conic-gradient(from 0deg,#3fa34d 0deg 180deg,#d0342c 180deg 240deg,#f2c417 240deg 300deg,#2f79c9 300deg 360deg);border:calc(var(--d) * .035) solid #f4efe6;box-shadow:0 28px 60px rgba(0,0,0,.6),inset 0 0 0 3px rgba(0,0,0,.12),inset 0 calc(var(--d) * .02) calc(var(--d) * .05) rgba(0,0,0,.28)}
+.dial::before{content:"";position:absolute;inset:0;border-radius:50%;background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.85) 0deg .7deg,transparent .7deg 60deg)}
+.dial::after{content:"";position:absolute;inset:0;border-radius:50%;background:radial-gradient(circle at 35% 28%,rgba(255,255,255,.28),rgba(255,255,255,0) 45%)}
+.dial .wedgeLabel{position:absolute;left:50%;top:50%;font:700 calc(var(--d) * .085) "Barlow Condensed",sans-serif;letter-spacing:.03em;color:#fff;text-shadow:0 2px 3px rgba(0,0,0,.45);transform-origin:0 0;white-space:nowrap;z-index:1}
+.dial .wedgeLabel small{display:block;font-size:.42em;font-weight:600;letter-spacing:.08em;opacity:.92;text-align:center}
+.needle{position:absolute;left:50%;top:50%;width:calc(var(--d) * .05);height:calc(var(--d) * .43);transform-origin:50% 100%;transform:translate(-50%,-100%) rotate(0deg);transition:transform 2.1s cubic-bezier(.12,.82,.2,1);z-index:2;filter:drop-shadow(0 4px 4px rgba(0,0,0,.45))}
+.needle::before{content:"";position:absolute;left:0;right:0;bottom:0;top:22%;background:linear-gradient(90deg,#2a1c14,#4d3527,#2a1c14);border-radius:3px}
+.needle::after{content:"";position:absolute;left:-60%;right:-60%;top:0;height:26%;background:#2a1c14;clip-path:polygon(50% 0,100% 100%,0 100%)}
+.hub{position:absolute;left:50%;top:50%;width:calc(var(--d) * .14);height:calc(var(--d) * .14);background:radial-gradient(circle at 35% 30%,#fffaf0,#d8cdb8);border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 3px 8px rgba(0,0,0,.45);z-index:3}
+#spinnerBox.ready .dial{animation:dialBreathe 2.2s ease-in-out infinite}
+#spinnerBox.ready .spinBtn:hover .dial{animation-play-state:paused;transform:scale(1.03)}
+@keyframes dialBreathe{0%,100%{transform:scale(1)}50%{transform:scale(1.025)}}
+.spinLabel.red{color:#ff8a80}.spinLabel.green{color:#8fe0a0}.spinLabel.H{color:var(--gold)}.spinLabel.two{color:#8ec8f2}
+.spinLabel.result{font-size:1.35rem;padding:9px 22px}
+@media (prefers-reduced-motion:reduce){.needle{transition:none}}
+
+/* the landed space: a big picture of the square, then it tucks up under the top mat until the turn ends */
+#landed{pointer-events:none;transition:top .6s cubic-bezier(.3,.8,.3,1),left .6s cubic-bezier(.3,.8,.3,1),transform .6s cubic-bezier(.3,.8,.3,1),opacity .4s}
+#landed .landedCard{pointer-events:auto;cursor:pointer}
+#landed .landedCard::after{content:"Tap to close";display:block;margin-top:8px;font:600 .66rem "Barlow Condensed",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+#landed.pinned{top:calc(var(--barH) + 20px + env(safe-area-inset-top,0px));left:calc(var(--insetL) + 18px);transform:translate(0,0) scale(.62);transform-origin:0 0}
+#landed.pinned .landedCard{animation:landInCorner .45s cubic-bezier(.2,1.3,.4,1) both}
+@keyframes landInCorner{0%{transform:translateX(-60px) scale(.8);opacity:0}100%{transform:none;opacity:1}}
+#dice{transition:top .55s cubic-bezier(.3,.8,.3,1),left .55s cubic-bezier(.3,.8,.3,1),transform .55s cubic-bezier(.3,.8,.3,1)}
+#dice.aside{top:calc(var(--barH) + 24px + env(safe-area-inset-top,0px));left:calc(var(--insetL) + 18px);transform:translate(0,0) scale(.6);transform-origin:0 0}
+#landed.leaving{opacity:0}
+.landedCard{--accent:var(--gold);width:290px;background:linear-gradient(180deg,rgba(28,26,24,.95),rgba(28,26,24,.9));border:3px solid var(--accent);border-radius:20px;padding:14px 14px 16px;box-shadow:0 26px 60px rgba(0,0,0,.6);animation:landIn .55s cubic-bezier(.2,1.3,.4,1) both}
+@keyframes landIn{0%{transform:scale(.4) rotate(-6deg);opacity:0}100%{transform:none;opacity:1}}
+.landedWho{font:600 .78rem "Barlow Condensed",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.landedWho .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:0}
+.landedImg{display:block;width:100%;aspect-ratio:1;border-radius:12px;background:#f6f4ee;box-shadow:inset 0 0 0 1px rgba(0,0,0,.15),0 6px 14px rgba(0,0,0,.35)}
+.landedType{margin-top:10px;font:700 1.5rem/1.05 "Barlow Condensed",sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--accent)}
+.landedHotels{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px}
+.landedHotelName{font:700 .85rem "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.35);padding:5px 12px;border-radius:999px}
+.landedSpaceNo{margin-top:7px;color:var(--muted);font-size:.78rem}
+
+/* takeover animation pieces */
+.flyer{position:fixed;left:0;top:0;z-index:9;pointer-events:none;will-change:transform}
+.flyer.deedCard{width:84px;height:116px;border-radius:9px}
+.flyer.deedCard .dTop{height:32px;font-size:11px}
+.flyer.deedCard .dStars span{width:8px;height:8px}
+.flyer.deedCard .dRate{font-size:11px}
+.flyer.bill{width:76px;height:40px;font-size:13px}
+.stamp{position:fixed;top:40%;left:calc(50% + var(--insetL) / 2);z-index:9;pointer-events:none;border:7px double #c8322b;color:#c8322b;font:700 2.7rem/1 "Barlow Condensed",sans-serif;letter-spacing:.08em;padding:14px 26px 12px;border-radius:12px;background:rgba(251,247,238,.95);text-transform:uppercase;text-align:center;box-shadow:0 24px 60px rgba(0,0,0,.45);opacity:0;transform:translate(-50%,-50%) rotate(-7deg)}
+.stamp small{display:block;font:600 .95rem/1.3 "Work Sans",sans-serif;letter-spacing:0;color:#2a241c;text-transform:none;margin-top:8px;max-width:30ch}
+.stamp.go{animation:stampIn 2.9s cubic-bezier(.2,.8,.2,1) forwards}
+@keyframes stampIn{0%{opacity:0;transform:translate(-50%,-50%) rotate(-7deg) scale(2.6)}11%{opacity:1;transform:translate(-50%,-50%) rotate(-7deg) scale(.94)}17%{transform:translate(-50%,-50%) rotate(-7deg) scale(1.03)}23%,84%{opacity:1;transform:translate(-50%,-50%) rotate(-7deg) scale(1)}100%{opacity:0;transform:translate(-50%,-50%) rotate(-7deg) scale(1)}}
+.mat.pulse{animation:matPulse .9s ease-out}
+@keyframes matPulse{0%{box-shadow:0 0 0 0 rgba(242,196,23,.8),0 12px 30px rgba(0,0,0,.35)}100%{box-shadow:0 0 0 18px rgba(242,196,23,0),0 12px 30px rgba(0,0,0,.35)}}
+
+
+
+/* ---------------------------------------------------------------- the players' bar across the top */
+#scoreBar{position:fixed;z-index:3;top:calc(12px + env(safe-area-inset-top,0px));left:calc(var(--insetL) + 12px);right:max(12px,env(safe-area-inset-right));display:flex;gap:8px;pointer-events:none}
+.pseg{flex:1 1 0;min-width:0;display:flex;gap:10px;align-items:flex-start;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-top:3px solid var(--pc);border-radius:12px;padding:8px 10px 9px;box-shadow:0 10px 26px rgba(0,0,0,.32);pointer-events:auto;transition:box-shadow .3s,border-color .3s}
+.pseg.now{border-color:rgba(127,193,242,.8);border-top-color:var(--pc);box-shadow:0 0 0 2px rgba(127,193,242,.5),0 10px 26px rgba(0,0,0,.4)}
+.pseg.out{opacity:.45}
+.pseg.pulse{animation:matPulse .9s ease-out}
+.psL{flex:none;min-width:0}
+.psName{display:flex;align-items:center;gap:6px;font:600 .8rem "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.psName .sw{width:9px;height:9px;border-radius:50%;flex:none}
+.psCash{font:600 1.2rem/1.15 "JetBrains Mono",monospace;font-variant-numeric:tabular-nums;margin-top:1px}
+.psNotes{display:flex;gap:7px;margin-top:6px;flex-wrap:nowrap}
+.psNotes .bill{width:40px;height:20px;font-size:7px}
+.psNotes .noDeeds{font-size:.7rem;color:var(--muted)}
+.psDeeds{flex:1;min-width:0;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end;align-content:flex-start;max-height:96px;overflow:hidden}
+.psDeeds .deedCard{width:34px;height:46px;border-radius:4px}
+.psDeeds .deedCard .dTop{height:13px;font-size:5.4px}
+.psDeeds .deedCard .dStars span{width:3px;height:3px}
+.psDeeds .deedCard .dRate{font-size:5.5px}
+.psNone{font-size:.72rem;color:var(--muted);align-self:center;margin-left:auto;padding-top:4px}
+@media (max-width:1180px){ .psNotes{display:none} }
+@media (max-width:720px){
+  #scoreBar{left:8px;right:8px;top:calc(8px + env(safe-area-inset-top,0px));overflow-x:auto;gap:6px}
+  .pseg{flex:0 0 auto;min-width:142px;max-width:220px;padding:6px 8px;gap:6px}
+  .psCash{font-size:1rem}
+  .psDeeds{max-height:46px}
+  .psDeeds .deedCard{width:24px;height:32px}
+  .psDeeds .deedCard .dTop{height:10px;font-size:4px}
+  .psDeeds .deedCard .dBody{display:none}
+}
+/* ---------------------------------------------------------------- the planning application, shown before every spin */
+#proposal{pointer-events:auto}
+.propDoc{width:min(400px,92vw);text-align:left;background:#fbf7ee;color:#221c14;border-radius:6px;box-shadow:0 30px 70px rgba(0,0,0,.55);overflow:hidden;animation:propIn .5s cubic-bezier(.2,1.2,.4,1) both;font:.84rem/1.4 "Work Sans",sans-serif}
+@keyframes propIn{0%{transform:translateY(40px) rotate(-3deg);opacity:0}100%{transform:none;opacity:1}}
+.propHead{background:#2a2f36;color:#f4efe6;padding:12px 16px 10px;border-bottom:4px solid var(--c,#c8322b)}
+.propHead .kick{font:600 .62rem "Barlow Condensed",sans-serif;letter-spacing:.22em;text-transform:uppercase;opacity:.75}
+.propHead h3{margin:2px 0 0;font:700 1.45rem/1 "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase}
+.propBody{padding:12px 16px 14px}
+.propRow{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dotted #d6cab3}
+.propRow span:first-child{color:#7b6c57;font:600 .66rem "Barlow Condensed",sans-serif;letter-spacing:.14em;text-transform:uppercase;padding-top:3px}
+.propRow b{font-weight:600}
+.propRow .chip{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:0}
+.propWorks{margin:8px 0 2px;width:100%;border-collapse:collapse}
+.propWorks td{padding:3px 0;border-bottom:1px solid #ece2cf}
+.propWorks td.num,.propOut td.num{text-align:right;font:600 .82rem "JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+.propWorks tr.total td{border-bottom:0;border-top:2px solid #221c14;font-weight:700;padding-top:5px}
+.propOutT{margin:12px 0 4px;font:600 .66rem "Barlow Condensed",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:#7b6c57}
+.propOut{width:100%;border-collapse:collapse}
+.propOut td{padding:4px 0;border-bottom:1px solid #ece2cf;vertical-align:top}
+.propOut .sw{display:inline-block;min-width:30px;text-align:center;font:700 .74rem/1 "Barlow Condensed",sans-serif;color:#fff;border-radius:3px;padding:3px 4px;margin-right:8px}
+.propOut .odds{color:#7b6c57;font-size:.72rem;margin-left:4px}
+.propOut .warn{display:block;color:#b3261e;font-size:.72rem}
+.propFoot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}
+.propFoot .note{color:#7b6c57}
+.propFoot button{background:#2a2f36;color:#fff;border-color:#2a2f36;font-weight:600}
+.propBtns{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.propFoot button.propCancel{background:transparent;color:#5b4f40;border-color:#c9bba3;font-weight:600}
+.propFoot button.propCancel:hover{background:#efe6d4}
+.propStamp{position:absolute;right:16px;top:14px;transform:rotate(8deg);border:3px solid #9cc8f0;color:#9cc8f0;border-radius:6px;padding:2px 8px;font:700 .8rem "Barlow Condensed",sans-serif;letter-spacing:.14em;text-transform:uppercase;opacity:.75}
+/* ---------------------------------------------------------------- title deeds viewer */
+#deeds{position:fixed;inset:0;z-index:8;background:rgba(10,8,6,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:20px}
+.deedsSheet{width:min(1120px,100%);max-height:100%;overflow:auto;background:var(--glass);border:1px solid var(--line);border-radius:18px;padding:18px 20px 22px;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.deedsHead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+.deedsHead h3{font:700 1.6rem/1 "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.03em;margin:0}
+.deedsHead p{margin:4px 0 0;color:var(--muted);font-size:.86rem}
+.deedGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:18px;margin-top:16px}
+.titleDeed{background:#fbf7ee;color:#1d1812;border-radius:12px;overflow:hidden;box-shadow:0 12px 26px rgba(0,0,0,.45);position:relative;transition:transform .2s}
+.titleDeed.focus{outline:3px solid var(--gold);outline-offset:3px;transform:translateY(-4px)}
+.tdHead{background:var(--c);color:#fff;padding:10px 12px 10px;text-align:center;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.tdKick{font:600 .6rem "Barlow Condensed",sans-serif;letter-spacing:.24em;text-transform:uppercase;opacity:.9}
+.tdName{font:700 1.5rem/1.05 "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.03em}
+.tdBody{padding:10px 13px 13px;font-size:.8rem}
+.tdRow{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dotted #d6cab3}
+.tdRow b{font:600 .8rem "JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+.tdTable{width:100%;border-collapse:collapse;margin-top:9px;font-size:.76rem}
+.tdTable th{font:600 .6rem "Barlow Condensed",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#7b6c57;text-align:left;padding:0 0 3px}
+.tdTable th.num,.tdTable td.num{text-align:right}
+.tdTable td{padding:3px 0;border-top:1px solid #ece2cf}
+.tdTable td.num{font-family:"JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+.tdTable tr.built td{font-weight:600;color:#1d1812}
+.tdTable tr.built td:first-child::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#c9a227;margin-right:5px;vertical-align:1px}
+.tdNote{margin-top:9px;font-size:.7rem;color:#7b6c57;line-height:1.35}
+.tdStamp{position:absolute;right:8px;top:8px;transform:rotate(9deg);border:3px solid #2f9b45;color:#2f9b45;font:700 .95rem "Barlow Condensed",sans-serif;letter-spacing:.12em;padding:2px 8px;border-radius:6px;background:rgba(251,247,238,.85)}
+.titleDeed.locked{background:repeating-linear-gradient(45deg,#2e2a26 0 12px,#28241f 12px 24px);color:var(--muted);min-height:330px;display:grid;place-items:center;text-align:center;padding:18px}
+.titleDeed.locked .lockName{font:700 1.3rem "Barlow Condensed",sans-serif;text-transform:uppercase;color:var(--ink)}
+.titleDeed.locked .lockBar{width:46px;height:6px;border-radius:3px;margin:10px auto}
+
+/* ---------------------------------------------------------------- HNN: the pop-out news channel that replaces the log */
+#tv{position:fixed;left:max(16px,env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom,0px));width:min(500px,calc(100vw - 32px));z-index:4;user-select:none}
+.tvBezel{background:linear-gradient(180deg,#34302b,#1c1a17);border-radius:16px;padding:7px 9px 9px;box-shadow:0 22px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);border:1px solid rgba(0,0,0,.5)}
+.tvTop{display:flex;align-items:center;gap:8px;padding:1px 2px 7px;cursor:grab;touch-action:none}
+.tvTop:active{cursor:grabbing}
+.tvBrand{flex:1;font:600 .68rem "Barlow Condensed",sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.tvTop button{padding:3px 8px;font-size:.72rem;border-radius:6px}
+.tvScreen{position:relative;height:138px;border-radius:10px;overflow:hidden;background:radial-gradient(120% 95% at 25% 15%,#2c5a86 0%,#14273d 55%,#0a1422 100%);box-shadow:inset 0 0 30px rgba(0,0,0,.55)}
+.tvScreen::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px),radial-gradient(130% 100% at 50% 50%,transparent 60%,rgba(0,0,0,.45))}
+.tvSkyline{position:absolute;left:0;right:0;bottom:24px;height:46px;opacity:.22}
+.tvBug{position:absolute;left:10px;top:9px;display:flex;align-items:center;gap:7px}
+.tvLogo{font:700 .95rem/1 "Barlow Condensed",sans-serif;letter-spacing:.04em;color:#fff;background:#c8322b;padding:4px 6px 3px;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.tvLogo span{color:#ffd9d5;font-weight:600}
+.tvLive{font:700 .62rem "Barlow Condensed",sans-serif;letter-spacing:.18em;color:#fff;display:flex;align-items:center;gap:5px}
+.tvLive i{width:7px;height:7px;border-radius:50%;background:#ff3b30;box-shadow:0 0 8px #ff3b30;animation:livePulse 1.4s ease-in-out infinite}
+@keyframes livePulse{50%{opacity:.35}}
+.tvClock{position:absolute;right:10px;top:8px;text-align:right;font:600 .78rem/1.15 "Barlow Condensed",sans-serif;letter-spacing:.06em;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.tvClock .wx{display:flex;align-items:center;justify-content:flex-end;gap:5px;color:#d8e6f5}
+.tvClock svg{width:18px;height:18px}
+.tvStory{position:absolute;left:0;right:0;bottom:30px;padding:0 10px}
+.tvStory.enter{animation:storyIn .55s cubic-bezier(.2,.9,.3,1)}
+@keyframes storyIn{0%{transform:translateX(-30px);opacity:0}100%{transform:none;opacity:1}}
+.tvKick{display:inline-block;font:700 .66rem/1 "Barlow Condensed",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#fff;background:#1f3a5c;padding:4px 7px 3px;border-radius:2px 2px 0 0}
+.tvKick.hot{background:#c8322b}
+.tvHead{background:rgba(248,245,238,.97);color:#141210;font:700 1.08rem/1.12 "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.01em;padding:6px 9px 5px;border-radius:0 4px 0 0}
+.tvSub{background:rgba(20,30,44,.92);color:#d8e2ec;font-size:.72rem;line-height:1.3;padding:4px 9px 5px;border-radius:0 0 4px 4px}
+.tvTicker{position:absolute;left:0;right:0;bottom:0;height:24px;background:#f2c417;color:#1b1712;display:flex;align-items:center;overflow:hidden;font:600 .74rem "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase}
+.tvTicker b{flex:none;background:#1b1712;color:#f2c417;height:100%;display:flex;align-items:center;padding:0 8px;letter-spacing:.14em;z-index:1}
+.tvTickerTrack{display:flex;white-space:nowrap;animation:tick 40s linear infinite;padding-left:12px}
+.tvTickerTrack span{padding-right:28px}
+.tvTickerTrack span::before{content:"◆";margin-right:10px;font-size:.6em;vertical-align:2px;opacity:.6}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.tvArchive{display:none;margin-top:8px;max-height:min(40vh,300px);overflow-y:auto;background:rgba(0,0,0,.28);border-radius:8px;padding:6px 8px}
+#tv.arch .tvArchive{display:block}
+.tvArchive .item{padding:5px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:.78rem;line-height:1.3}
+.tvArchive .item .k{font:700 .6rem "Barlow Condensed",sans-serif;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}
+.tvArchive .item .k.hot{color:#ff8a80}
+.tvArchive .item .t{color:var(--muted);font:.66rem "JetBrains Mono",monospace;float:right}
+.tvArchive .item .s{color:var(--muted);font-size:.72rem}
+.tvArchive details{margin-top:6px;font-size:.74rem;color:var(--muted)}
+.tvArchive details pre{white-space:pre-wrap;font:.7rem/1.4 "JetBrains Mono",monospace;margin:6px 0 0}
+#tv.min .tvScreen,#tv.min .tvArchive{display:none}
+#tv.min{width:auto}
+@media (prefers-reduced-motion:reduce){.tvTickerTrack{animation:none}.tvLive i{animation:none}}
+
+/* ---------------------------------------------------------------- camera dock */
+#camDock{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:4;display:flex;align-items:center;gap:5px;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:0 14px 34px rgba(0,0,0,.4)}
+#camDock button{width:40px;height:40px;padding:0;display:grid;place-items:center;border-radius:10px}
+#camDock button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#camDock button.on{background:rgba(242,196,23,.2);border-color:rgba(242,196,23,.6);color:var(--gold)}
+#camDock .sep{width:1px;height:26px;background:var(--line);margin:0 2px}
+.camHint{position:fixed;right:max(16px,env(safe-area-inset-right));bottom:calc(72px + env(safe-area-inset-bottom,0px));z-index:4;font-size:.74rem;color:var(--muted);background:var(--glass);border:1px solid var(--line);border-radius:10px;padding:7px 10px;max-width:260px;line-height:1.4;pointer-events:none;transition:opacity .5s}
+.camHint.gone{opacity:0}
+.skyRow{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.skyRow label{display:flex;align-items:center;gap:6px;font-size:.8rem;color:var(--muted)}
+.skyRow select{padding:5px 7px;font-size:.82rem}
+.deedsBtn{margin-top:8px;width:100%;text-align:center}
+
+@media (max-width:980px){ .mat{min-width:126px;max-width:168px;padding:8px 10px} .mat .deeds{max-height:90px} #tv{width:min(440px,calc(100vw - 32px))} }
+@media (max-width:720px){
+  .panel{left:12px;right:12px;width:auto;top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-height:52%;padding:12px;gap:10px}
+  #gamePanel{max-height:52%}
+  .panel.min .body{display:none !important}
+  #toggle{display:inline-block;position:absolute;right:12px;top:12px}
+  h1{font-size:1.4rem}
+  .lead{display:none}
+  #toast{top:calc(150px + env(safe-area-inset-top,0px))}
+  .centerStage{left:50%;top:38%}
+  .die{width:92px;height:92px;padding:15px;border-radius:20px}
+  .die .pip{width:15px;height:15px}
+  .dial{--d:min(78vw,300px)}
+  .landedCard{width:220px}
+  #landed.pinned{top:calc(var(--barH) + 14px + env(safe-area-inset-top,0px));left:12px;transform:scale(.5)}
+  #dice.aside{top:calc(var(--barH) + 14px + env(safe-area-inset-top,0px));left:12px}
+  #tv{left:12px;right:12px;width:auto;top:calc(var(--barH) + 16px + env(safe-area-inset-top,0px));bottom:auto}
+  #tv .tvScreen{height:96px}
+  #tv .tvSkyline,#tv .tvSub,#tv .tvKick{display:none}
+  #tv .tvHead{font-size:.9rem}
+  #camDock{bottom:auto;top:calc(var(--barH) + 170px + env(safe-area-inset-top,0px));right:12px;flex-direction:column}
+  #camDock .sep{width:26px;height:1px}
+  #camDock button{width:36px;height:36px}
+  .camHint{display:none}
+}
+@media (prefers-reduced-motion:reduce){#loading,#toast{transition:none}.die,.dial,.halo,.landedCard{animation:none !important}}
+
+/* Table options fold away during a game */
+.tableCard summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
+.tableCard summary::-webkit-details-marker{display:none}
+.tableCard summary h2{margin:0}
+.tableCard summary::after{content:"▸";color:var(--muted);transition:transform .2s}
+.tableCard[open] summary::after{transform:rotate(90deg)}
+.tableCard[open] summary{margin-bottom:10px}
+.tableCard:not([open]){padding:9px 12px}
+/* a decision to make: the turn card comes to the middle of the screen */
+#decide{position:fixed;left:calc(50% + var(--insetL) / 2);top:52%;transform:translate(-50%,-50%);z-index:6;width:min(420px,calc(100vw - 24px));transition:top .45s cubic-bezier(.3,.8,.3,1),transform .45s cubic-bezier(.3,.8,.3,1)}
+#decide.low{top:auto;bottom:calc(18px + var(--tvH,0px) * 0 + env(safe-area-inset-bottom,0px));transform:translate(-50%,0)}
+#decide #turnCard{background:linear-gradient(180deg,rgba(30,28,25,.97),rgba(24,22,20,.95));border:2px solid rgba(242,196,23,.8);border-radius:16px;padding:16px 18px 18px;box-shadow:0 0 0 6px rgba(242,196,23,.16),0 30px 70px rgba(0,0,0,.6);animation:decideIn .45s cubic-bezier(.2,1.25,.4,1) both}
+@keyframes decideIn{0%{transform:scale(.7) translateY(20px);opacity:0}100%{transform:none;opacity:1}}
+#decide #turnCard .yourMove{display:block;font-size:.8rem}
+#decide .who{font-size:1.1rem}
+#decide .btns button{padding:11px 14px;font-size:.98rem}
+#decide .decideFold{position:absolute;right:12px;top:12px;z-index:1;padding:3px 9px;font-size:.72rem;border-radius:6px}
+#decide.folded #turnCard > :not(.yourMove):not(.who){display:none !important}
+#decide.folded #turnCard{padding:12px 16px}
+#decide.folded{top:auto;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translate(-50%,0)}
+@media (max-width:720px){ #decide{left:50%;top:50%} #decide.low,#decide.folded{top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));transform:translate(-50%,0)} }
+/* the player bar opens into a full view of that player's holdings */
+.pseg{cursor:pointer}
+.pseg:hover{border-color:rgba(255,255,255,.35)}
+.pseg:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.tdOwner{font:700 .74rem "Barlow Condensed",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.4);padding:4px 12px;text-align:center}
+.holdTop{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:18px;align-items:center;background:var(--glass2);border:1px solid var(--line);border-top:4px solid var(--pc);border-radius:12px;padding:14px 16px}
+.holdCash{font:600 2rem/1 "JetBrains Mono",monospace;font-variant-numeric:tabular-nums}
+.holdCash small{display:block;font:600 .7rem "Barlow Condensed",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.holdNotes{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.holdNotes .bill{width:92px;height:46px;font-size:14px}
+.holdNotes .bill .n{font-size:11px;padding:2px 6px;bottom:-8px;right:-8px}
+.holdStats{margin-left:auto;color:var(--muted);font-size:.85rem;text-align:right}
+.holdEmpty{grid-column:1/-1;color:var(--muted);text-align:center;padding:30px 0}
+
+/* planning: pick how far to build, hotel by hotel, as a strip of building tiles */
+#decide.wide{width:min(720px,calc(100vw - 24px))}
+#decide{max-height:calc(100vh - var(--barH) - 36px);overflow:auto;border-radius:16px}
+#decide.wide{top:calc(50% + var(--barH) / 2)}
+#decide.wide.low,#decide.wide.folded{top:auto}
+.buildPick{display:grid;gap:10px}
+.bpHotel{border-radius:12px;overflow:hidden;background:rgba(255,255,255,.04);border:1px solid var(--line)}
+.bpHead{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--hc);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.45)}
+.bpHead b{font:700 1.05rem "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase}
+.bpHead span{margin-left:auto;font-size:.76rem;opacity:.95}
+.bpTiles{display:flex;gap:6px;padding:9px;overflow-x:auto}
+.bpTile{all:unset;box-sizing:border-box;flex:1 1 0;min-width:96px;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 6px 7px;border-radius:9px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);text-align:center;cursor:pointer;transition:transform .15s,background .15s,border-color .15s;position:relative}
+.bpTile svg{width:76px;height:48px}
+.bpTile .nm{font:700 .74rem/1.05 "Barlow Condensed",sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--ink)}
+.bpTile .co{font:600 .82rem "JetBrains Mono",monospace;color:var(--gold)}
+.bpTile .rt{font-size:.66rem;color:var(--muted)}
+.bpTile.built{cursor:default;opacity:.55;background:transparent;border-style:dashed}
+.bpTile.built .co{color:#8fe0a0}
+.bpTile.na{cursor:not-allowed;opacity:.35}
+.bpTile:not(.built):not(.na):hover,.bpTile.lit{background:rgba(242,196,23,.16);border-color:rgba(242,196,23,.75);transform:translateY(-2px)}
+.bpTile:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.bpTile .step{position:absolute;top:4px;left:6px;font:700 .58rem "Barlow Condensed",sans-serif;color:var(--muted)}
+.bpHint{font-size:.76rem;color:var(--muted);padding:2px 2px 0;text-align:center}
+.bpHint b{color:var(--ink)}
+.thWhy{margin-top:8px;font-size:.78rem;color:var(--muted);line-height:1.4}
+.thWhy b{color:var(--ink)}
+
+/* Town Hall: every hotel you own, one entrance each */
+#decide .btns .thTile{padding:0;font-size:inherit}
+#decide .btns .bpTile{padding:8px 6px 7px;font-size:inherit}
+.thPick{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.thTile{all:unset;box-sizing:border-box;border-radius:10px;overflow:hidden;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);display:flex;flex-direction:column;text-align:center;cursor:pointer;transition:transform .15s,border-color .15s}
+.thTile .th{background:var(--hc);color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.45);font:700 .86rem "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;padding:5px 6px}
+.thTile svg{width:74px;height:45px;margin:8px auto 2px}
+.thTile .co{font:600 .82rem "JetBrains Mono",monospace;color:var(--gold)}
+.thTile .st{font-size:.7rem;color:var(--muted);padding:2px 6px 8px;line-height:1.25}
+.thTile.ok .st{color:var(--ink);font-weight:600}
+.thTile.ok:hover,.thTile.ok.sel{border-color:rgba(242,196,23,.8);transform:translateY(-2px);background:rgba(242,196,23,.12)}
+.thTile.ok:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.thTile.done{cursor:default;border-color:rgba(143,224,160,.6)}
+.thTile.done .st{color:#8fe0a0;font-weight:600}
+.thTile.no{cursor:not-allowed;opacity:.5}
+.thNote{margin-bottom:4px;font-size:.76rem;color:var(--muted);text-align:center;margin-top:2px}
+
+/* every choice as picture tiles; when there's nothing to do, say why */
+.optWrap{display:grid;gap:10px}
+.thTile .own{font:600 .66rem "Barlow Condensed",sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#fff;padding:2px 6px;margin:0 auto 4px;border-radius:999px;background:var(--oc,#555)}
+.thTile.ok .st{color:var(--gold)}
+.thTile.free .co{color:#8fe0a0}
+.noOpt{display:flex;gap:12px;align-items:flex-start;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.noOpt svg{flex:none;width:40px;height:40px}
+.noOpt h4{margin:0 0 4px;font:700 1.05rem "Barlow Condensed",sans-serif;letter-spacing:.05em;text-transform:uppercase;color:var(--ink)}
+.noOpt p{margin:0;font-size:.82rem;color:var(--muted);line-height:1.4}
+.noOpt ul{margin:6px 0 0;padding:0;list-style:none;display:grid;gap:4px}
+.noOpt li{font-size:.8rem;color:var(--muted);display:flex;gap:7px;align-items:center}
+.noOpt li i{flex:none;width:10px;height:10px;border-radius:3px;background:var(--hc)}
+.noOpt li b{color:var(--ink)}
+.optRow{display:flex;gap:8px;flex-wrap:wrap}
+.optRow > button{flex:1 1 160px}
+#decide .btns .optRow .go{background:var(--gold);color:#1b1712;border-color:var(--gold);font-weight:700}
+.whyList{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.whyList span{font-size:.72rem;color:var(--muted);background:rgba(255,255,255,.05);border:1px solid var(--line);border-left:4px solid var(--hc);border-radius:6px;padding:3px 8px}
+.whyList span b{color:var(--ink)}
+.bidPanel{display:grid;gap:8px}
+.bidLot{display:flex;gap:12px;align-items:center;background:rgba(255,255,255,.05);border:1px solid var(--line);border-left:6px solid var(--hc);border-radius:10px;padding:9px 12px}
+.bidLot svg{width:48px;height:40px;flex:none}
+.bidLot .nm{font:700 1.1rem "Barlow Condensed",sans-serif;letter-spacing:.05em;text-transform:uppercase}
+.bidLot .sub{font-size:.76rem;color:var(--muted)}
+.bidLot .hi{margin-left:auto;text-align:right;font:600 1.15rem "JetBrains Mono",monospace;color:var(--gold)}
+.bidLot .hi small{display:block;font:600 .62rem "Barlow Condensed",sans-serif;letter-spacing:.14em;color:var(--muted)}
+.bidChips{display:flex;gap:6px;flex-wrap:wrap}
+#decide .btns .bidChips button{flex:1 1 80px;padding:9px 6px;font:600 .9rem "JetBrains Mono",monospace}
+.bidCustom{display:flex;gap:6px;align-items:center}
+.bidCustom input{flex:1;min-width:0}
+
+/* staying at someone else's hotel: a big bill of what each roll will cost */
+#stayCard{position:fixed;z-index:5;left:calc(50% + var(--insetL) / 2);top:calc(var(--barH) + 18px + env(safe-area-inset-top,0px));transform:translateX(-50%);width:min(560px,calc(100vw - 24px));pointer-events:none}
+.stayIn{background:linear-gradient(180deg,rgba(30,28,25,.97),rgba(22,20,18,.95));border:3px solid var(--hc);border-radius:18px;overflow:hidden;box-shadow:0 0 0 6px color-mix(in srgb,var(--hc) 30%,transparent),0 28px 70px rgba(0,0,0,.6);animation:stayPop .55s cubic-bezier(.2,1.35,.4,1)}
+@keyframes stayPop{0%{transform:scale(.6) translateY(-30px)}70%{transform:scale(1.04)}100%{transform:none}}
+.stayHead{background:var(--hc);color:#fff;text-shadow:0 2px 3px rgba(0,0,0,.45);text-align:center;padding:10px 12px 8px}
+.stayHead .k{font:700 .78rem "Barlow Condensed",sans-serif;letter-spacing:.22em;text-transform:uppercase;opacity:.92}
+.stayHead .h{font:700 2.3rem/1 "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase;margin-top:3px}
+.stayHead .st{font-size:1rem;letter-spacing:.2em;margin-top:2px;color:#ffe27a}
+.stayWho{text-align:center;font-size:1.05rem;padding:10px 12px 4px;color:var(--ink)}
+.stayWho b{font-weight:700}
+.stayWho .sw{display:inline-block;width:11px;height:11px;border-radius:50%;margin:0 5px 0 2px;vertical-align:0}
+.stayRate{text-align:center;color:var(--muted);font-size:.86rem;padding-bottom:8px}
+.stayRate b{color:var(--gold);font-family:"JetBrains Mono",monospace}
+.stayGrid{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;padding:0 12px 12px}
+.stayCell{border-radius:10px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);text-align:center;padding:7px 2px 6px;transition:transform .3s,background .3s,border-color .3s,opacity .3s}
+.stayCell .pips{display:grid;grid-template-columns:repeat(3,6px);grid-template-rows:repeat(3,6px);gap:2px;width:max-content;margin:0 auto 4px;background:#fffaf0;border-radius:5px;padding:4px}
+.stayCell .pips i{width:6px;height:6px;border-radius:50%;background:transparent}
+.stayCell .pips i.on{background:#2a1c14}
+.stayCell .n{font:600 .66rem "Barlow Condensed",sans-serif;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.stayCell .c{font:700 1rem "JetBrains Mono",monospace;color:var(--ink)}
+.stayCell.cant .c{color:#ff8a80}
+.stayCell.hit{background:var(--hc);border-color:#fff;transform:scale(1.12);box-shadow:0 8px 20px rgba(0,0,0,.45)}
+.stayCell.hit .c,.stayCell.hit .n{color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5)}
+#stayCard.done .stayCell:not(.hit){opacity:.35}
+.stayFoot{text-align:center;font-size:.8rem;color:var(--muted);padding:0 12px 12px}
+.stayFoot b{color:#ff8a80}
+.stayResult{text-align:center;font:700 1.5rem "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase;color:var(--gold);padding:0 12px 12px}
+body.staying #dice{top:auto;bottom:calc(16% + env(safe-area-inset-bottom,0px));transform:translate(-50%,0)}
+@media (max-width:720px){ .stayHead .h{font-size:1.7rem} .stayGrid{gap:4px;padding:0 8px 10px} .stayCell .c{font-size:.78rem} .stayWho{font-size:.9rem} body.staying #dice{bottom:calc(10% + env(safe-area-inset-bottom,0px))} }
+/* the end of the game */
+#winBanner{position:fixed;inset:0;z-index:7;display:grid;justify-items:center;align-items:start;pointer-events:none;padding:calc(var(--barH) + 14px + env(safe-area-inset-top,0px)) 16px 20px}
+@media (max-width:720px){ .winIn{padding:14px 16px 16px} .winIn .crown{font-size:1.8rem} .winIn .stats{gap:12px;margin:8px 0 2px} .winIn .stats b{font-size:1.05rem} }
+.winIn{pointer-events:auto;text-align:center;background:radial-gradient(120% 140% at 50% 0%,rgba(60,50,20,.92),rgba(18,16,14,.94));border:3px solid var(--gold);border-radius:22px;padding:22px 30px 24px;box-shadow:0 0 0 8px rgba(242,196,23,.18),0 0 80px rgba(242,196,23,.35),0 40px 90px rgba(0,0,0,.7);animation:winPop 1s cubic-bezier(.2,1.4,.4,1) both;max-width:min(560px,100%)}
+@keyframes winPop{0%{transform:scale(.3) rotate(-8deg)}100%{transform:none}}
+.winIn .crown{font-size:2.6rem;line-height:1;filter:drop-shadow(0 4px 8px rgba(0,0,0,.5));animation:crownBob 2s ease-in-out infinite}
+@keyframes crownBob{50%{transform:translateY(-6px) rotate(4deg)}}
+.winIn .k{font:700 .9rem "Barlow Condensed",sans-serif;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);margin-top:6px}
+.winIn .name{font:700 3.4rem/1 "Barlow Condensed",sans-serif;letter-spacing:.03em;text-transform:uppercase;color:#fff;text-shadow:0 0 24px var(--pc),0 3px 6px rgba(0,0,0,.6);margin:6px 0 4px}
+.winIn .sub{color:var(--ink);font-size:1rem;opacity:.9}
+.winIn .stats{display:flex;gap:18px;justify-content:center;margin:14px 0 4px;flex-wrap:wrap}
+.winIn .stats div{font:600 .7rem "Barlow Condensed",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.winIn .stats b{display:block;font:700 1.3rem "JetBrains Mono",monospace;color:var(--gold);letter-spacing:0}
+.winIn .btns2{display:flex;gap:8px;justify-content:center;margin-top:14px;flex-wrap:wrap}
+.winIn .btns2 .go{background:var(--gold);color:#1b1712;border-color:var(--gold);font-weight:700}
+#winBanner.small{padding-top:calc(var(--barH) + 18px + env(safe-area-inset-top,0px))}
+#winBanner.small .winIn{transform:scale(.55);transform-origin:50% 0;align-self:start;animation:none}
+@media (max-width:720px){ .winIn .name{font-size:2.4rem} }
+
+/* the rules */
+#rules{position:fixed;inset:0;z-index:8;background:rgba(10,8,6,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:grid;place-items:center;padding:20px}
+.rulesSheet{width:min(760px,100%);max-height:100%;display:flex;flex-direction:column;background:#fbf7ee;color:#221c14;border-radius:18px;box-shadow:0 30px 80px rgba(0,0,0,.5);overflow:hidden}
+.rulesHead{display:flex;align-items:center;gap:12px;padding:16px 20px 12px;background:#1f2a36;color:#fff}
+.rulesHead h3{margin:0;font:700 1.6rem "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;flex:1}
+.rulesHead h3 small{display:block;font:600 .7rem "Barlow Condensed",sans-serif;letter-spacing:.2em;color:#f2c417}
+.rulesHead button{background:#fff;color:#1f2a36;border-color:#fff;font-weight:700}
+.rulesTabs{display:flex;gap:4px;padding:8px 14px 0;background:#1f2a36;overflow-x:auto}
+.rulesTabs button{all:unset;cursor:pointer;padding:8px 12px 9px;border-radius:8px 8px 0 0;color:#c9d3dd;font:600 .82rem "Barlow Condensed",sans-serif;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
+.rulesTabs button.on{background:#fbf7ee;color:#1f2a36}
+.rulesTabs button:focus-visible{outline:2px solid #f2c417}
+.rulesBody{overflow:auto;padding:16px 22px 22px;font-size:.92rem;line-height:1.5}
+.rulesBody h4{margin:16px 0 6px;font:700 1.05rem "Barlow Condensed",sans-serif;letter-spacing:.06em;text-transform:uppercase;color:#1f2a36}
+.rulesBody h4:first-child{margin-top:0}
+.rulesBody p{margin:0 0 8px}
+.rulesBody ul{margin:0 0 8px;padding-left:20px}
+.rulesBody li{margin-bottom:4px}
+.rulesBody b{color:#000}
+.rSpace{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:start;margin:6px 0 10px}
+.rSpace .tag{font:700 .72rem "Barlow Condensed",sans-serif;letter-spacing:.1em;text-transform:uppercase;padding:4px 8px;border-radius:5px;color:#fff;text-align:center;min-width:92px}
+.rSpin{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}
+.rSpin span{padding:5px 10px;border-radius:6px;color:#fff;font:700 .8rem "Barlow Condensed",sans-serif;letter-spacing:.05em}
+.rulesBtn{display:inline-flex;align-items:center;gap:6px}
+#setupPanel .rulesBtn{width:100%;justify-content:center}
+.deedsHead .rulesBtn{margin-right:8px}
+/* lite mode: frosted glass is re-blurred every frame over the moving 3D scene, so swap it for a solid tint */
+body.lite *{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+body.lite{--glass:rgba(28,26,24,.93)}
+#fpsBox{position:fixed;z-index:6;right:max(16px,env(safe-area-inset-right));top:calc(var(--barH) + 10px + env(safe-area-inset-top,0px));font:600 12px ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.6);padding:4px 8px;border-radius:6px;pointer-events:none}
+.perfLab{margin-top:6px}.perfLab small{opacity:.65;font-size:.78em;margin-left:4px}.perfLab p{margin:6px 0}
+</style>
+
+<div id="stage" aria-label="3D model of the Hotel board"></div>
+<div id="fpsBox" class="hidden"></div>
+<div id="loading"><div>Setting out the board…</div></div>
+
+<aside class="panel" id="setupPanel">
+  <header>
+    <div class="eyebrow">Phase 4 · Play</div>
+    <h1>Hotel</h1>
+    <p class="lead">The full game, on the board. Pass the device around the table — each seat plays on its turn. Fill any empty seat with a computer player.</p>
+  </header>
+  <div class="card">
+    <h2>Seats</h2>
+    <div class="seats" id="seats"></div>
+  </div>
+  <label class="check"><input type="checkbox" id="claimMode"><span>Claim it or lose it — Bank money, stay payments and entrance purchases must be claimed before the next player rolls, or they're lost.</span></label>
+  <div class="row">
+    <button class="primary" id="startBtn">Start game</button>
+    <button id="rulesStart" class="rulesBtn">📖 How to play</button>
+    <button id="resumeBtn" class="hidden">Resume saved game</button>
+  </div>
+</aside>
+
+<aside class="panel hidden" id="gamePanel">
+  <script>if (window.innerWidth <= 720) document.currentScript.parentElement.classList.add('min');</script>
+  <button id="toggle" aria-expanded="true">Hide</button><script>if (window.innerWidth <= 720) { const b = document.getElementById('toggle'); b.textContent = 'Play'; b.setAttribute('aria-expanded', 'false'); }</script>
+  <div class="body" style="display:grid;gap:14px">
+    <div class="card" id="turnCard">
+      <div class="yourMove" id="yourMove">Your move</div>
+      <div class="who" id="who"></div>
+      <div class="claims hidden" id="claims" style="margin-top:8px"></div>
+      <div class="btns" id="btns" style="margin-top:8px"></div>
+      <p class="entranceHint hidden" id="entranceHint">Tap a glowing spot on the board to place it there.</p>
+      <div class="bid hidden" id="bidRow"><input type="number" id="bidAmt" step="50"><button id="bidBtn" class="primary">Bid</button><span id="bidHint" class="note"></span></div>
+      <div class="row" style="gap:6px;margin-top:8px"><button class="deedsBtn hidden" id="deedsBtn" style="margin-top:0">View title deeds</button><button class="rulesBtn" id="rulesGame">📖 Rules</button></div>
+    </div>
+    <div class="card" id="playersCard">
+      <h2>Players</h2>
+      <div class="players" id="players"></div>
+    </div>
+    <details class="card tableCard" id="tableCard">
+      <summary><h2>Table options</h2></summary>
+      <div class="tools">
+        <button id="tilt" aria-pressed="false">Miniature blur</button>
+        <button id="fastBtn">Computer speed: normal</button>
+        <button id="newBtn">New game</button>
+      </div>
+      <div class="skyRow">
+        <label>Sky <select id="timeSel"><option value="auto">Day &amp; night</option><option value="dawn">Dawn</option><option value="day">Midday</option><option value="dusk">Dusk</option><option value="night">Night</option></select></label>
+        <label>Weather <select id="wxSel"><option value="auto">Changing</option><option value="sunny">Sunny</option><option value="fair">Sunny spells</option><option value="cloudy">Cloudy</option><option value="rain">Rain</option><option value="windy">Windy</option><option value="mist">Misty</option></select></label>
+        <label class="sndRow"><input type="checkbox" id="musOn"> Music <input type="range" id="musVol" min="0" max="1" step="0.05" aria-label="Music volume"></label>
+        <label class="sndRow"><input type="checkbox" id="sfxOn"> Sounds <input type="range" id="sfxVol" min="0" max="1" step="0.05" aria-label="Sound effects volume"></label>
+        <label>Graphics <select id="gfxSel"><option value="auto">Auto</option><option value="high">Full</option><option value="lite">Lite</option><option value="low">Low</option><option value="custom" hidden>Custom</option></select></label>
+        <div class="note" id="gfxNote" style="margin-top:2px"></div>
+        <label class="sndRow"><input type="checkbox" id="fpsOn"> Show frame rate</label>
+        <details class="perfLab"><summary class="note">Performance switches</summary>
+          <p class="note">Flip these mid-game to see what each one changes. Watch the frame rate top right. Switches last until you pick a setting above.</p>
+          <label class="sndRow"><input type="checkbox" data-opt="lite"> Lite finish <small>no gloss, lighter shadows, smaller textures, fewer clouds</small></label>
+          <label class="sndRow"><input type="checkbox" data-opt="simple"> Simple shading</label>
+          <label class="sndRow"><input type="checkbox" data-opt="blobs"> Painted shadows <small>instead of real-time</small></label>
+          <label class="sndRow"><input type="checkbox" data-opt="noOverlays"> No clouds, rain, glows or foam</label>
+          <label class="sndRow"><input type="checkbox" data-opt="noPost"> No post-processing</label>
+          <label class="sndRow"><input type="checkbox" data-opt="cap30"> Cap at 30 fps</label>
+          <label class="sndRow"><input type="checkbox" data-opt="merge"> Merge scenery <small>fewer draw calls</small></label>
+          <label class="sndRow"><input type="checkbox" id="plainOn"> Plain panels <small>no frosted glass</small></label>
+          <label>Sharpness <select id="sharpSel"><option value="auto">Auto</option><option value="2">2×</option><option value="1.5">1.5×</option><option value="1.25">1.25×</option><option value="1">1×</option><option value="0.75">0.75×</option><option value="0.5">0.5×</option></select></label>
+          <p class="note" id="gpuNote"></p>
+        </details>
+      </div>
+      <details class="credits" style="margin-top:8px"><summary class="note">Sound credits</summary><ul id="sndCredits" class="note"></ul></details>
+      <p class="note" style="margin-top:8px">Saves after every move in this browser — reload any time and pick up where you left off.</p>
+    </details>
+  </div>
+</aside>
+
+<div id="scoreBar" class="hidden" aria-label="Players' money and properties"></div>
+<div id="toast" role="status"></div>
+<div id="botFeed" aria-live="polite"></div>
+<div id="stayCard" class="hidden" aria-live="assertive"></div>
+<div id="winBanner" class="hidden" role="dialog" aria-label="Game over"></div>
+
+<div id="dice" class="centerStage hidden">
+  <button class="dieBtn" id="dieBtn" aria-label="Roll the die" tabindex="-1">
+    <span class="halo"></span>
+    <div class="die" id="dieBody">
+      <span class="pip" data-p="tl"></span><span class="pip" data-p="tr"></span>
+      <span class="pip" data-p="ml"></span><span class="pip" data-p="c"></span><span class="pip" data-p="mr"></span>
+      <span class="pip" data-p="bl"></span><span class="pip" data-p="br"></span>
+    </div>
+  </button>
+  <div class="caption" id="dieCaption"></div>
+</div>
+
+<div id="spinnerBox" class="centerStage hidden">
+  <button class="spinBtn" id="spinBtn" aria-label="Spin for planning permission" tabindex="-1">
+    <div class="dial" id="dial">
+      <span class="wedgeLabel" style="transform:rotate(90deg) translateY(calc(var(--d) * -.27)) rotate(-90deg) translate(-50%,-50%)">GREEN<small>granted</small></span>
+      <span class="wedgeLabel" style="transform:rotate(210deg) translateY(calc(var(--d) * -.32)) rotate(-210deg) translate(-50%,-50%)">RED<small>refused</small></span>
+      <span class="wedgeLabel" style="transform:rotate(270deg) translateY(calc(var(--d) * -.32)) rotate(-270deg) translate(-50%,-50%)">H<small>free</small></span>
+      <span class="wedgeLabel" style="transform:rotate(330deg) translateY(calc(var(--d) * -.32)) rotate(-330deg) translate(-50%,-50%)">×2<small>double</small></span>
+      <div class="needle" id="needle"></div>
+      <div class="hub"></div>
+    </div>
+  </button>
+  <div class="caption spinLabel" id="spinLabel"></div>
+</div>
+
+<div id="landed" class="centerStage hidden" aria-live="polite">
+  <div class="landedCard" id="landedCard">
+    <div class="landedWho" id="landedWho"></div>
+    <img class="landedImg" id="landedImg" alt="">
+    <div class="landedType" id="landedType"></div>
+  </div>
+</div>
+
+<div id="decide" class="hidden" role="dialog" aria-label="Your decision"><button id="decideFold" class="decideFold" aria-expanded="true" title="Fold away to look at the board">Hide</button></div>
+<div class="stamp" id="stamp"></div>
+<div id="confirmBox" class="hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle"><div class="confirmCard"><h3 id="confirmTitle"></h3><p id="confirmText"></p><div class="confirmBtns"><button id="confirmNo">Go back</button><button id="confirmYes" class="danger"></button></div></div></div>
+<div id="proposal" class="centerStage hidden" role="dialog" aria-label="Planning application"></div>
+
+<div id="rules" class="hidden" role="dialog" aria-modal="true" aria-labelledby="rulesTitle">
+  <div class="rulesSheet">
+    <div class="rulesHead"><h3 id="rulesTitle"><small>MB Hotel · 1986</small>How to play</h3><button id="rulesClose">Close</button></div>
+    <div class="rulesTabs" role="tablist">
+      <button data-t="aim" class="on">Aim</button><button data-t="turn">Your turn</button><button data-t="spaces">Spaces</button><button data-t="build">Building</button><button data-t="ent">Entrances &amp; stays</button><button data-t="money">Money trouble</button><button data-t="end">Winning</button>
+    </div>
+    <div class="rulesBody" id="rulesBody"></div>
+  </div>
+</div>
+
+<div id="deeds" class="hidden" role="dialog" aria-modal="true" aria-labelledby="deedsTitle">
+  <div class="deedsSheet">
+    <div class="deedsHead">
+      <div><h3 id="deedsTitle">Title deeds</h3><p id="deedsSub"></p></div>
+      <span><button class="rulesBtn" id="rulesDeeds">📖 Rules</button><button id="deedsClose">Close</button></span>
+    </div>
+    <div class="deedGrid" id="deedGrid"></div>
+  </div>
+</div>
+
+<div id="tv" class="hidden" aria-label="Hotel News Network">
+  <div class="tvBezel">
+    <div class="tvTop" id="tvGrip">
+      <span class="tvBrand">Channel 3 · Hotel News Network</span>
+      <button id="tvArchBtn" aria-pressed="false">Archive</button>
+      <button id="tvMinBtn" aria-pressed="false">Hide</button>
+    </div>
+    <div class="tvScreen">
+      <svg class="tvSkyline" viewBox="0 0 340 58" preserveAspectRatio="none" aria-hidden="true"><path fill="#9fc3e6" d="M0 58V40h14v-8h10v8h8V22h16v18h6V30h12v28zM70 58V18h20v-6h8v6h10v40zM120 58V34h12V26h18v32zM154 58V8h22v50zM180 58V28h10v-6h14v36zM208 58V36h18V20h16v38zM246 58V14h12v-6h10v6h4v44zM276 58V30h16v28zM296 58V24h18v10h10v24zM326 58V38h14v20z"/></svg>
+      <div class="tvBug"><div class="tvLogo">HNN<span>·3</span></div><div class="tvLive"><i></i>LIVE</div></div>
+      <div class="tvClock"><div id="tvTime">Day 1 · 09:30</div><div class="wx"><span id="tvWxIcon"></span><span id="tvWx">Sunny 16°</span></div></div>
+      <div class="tvStory" id="tvStory"></div>
+      <div class="tvTicker"><b>Latest</b><div class="tvTickerTrack" id="tvTicker"></div></div>
+    </div>
+    <div class="tvArchive" id="tvArchive"></div>
+  </div>
+</div>
+
+<div id="camDock" class="hidden" role="toolbar" aria-label="Camera">
+  <button id="camIn" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M10.5 7.5v6M7.5 10.5h6"/></svg></button>
+  <button id="camOut" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21M7.5 10.5h6"/></svg></button>
+  <span class="sep"></span>
+  <button id="camHome" title="Whole board" aria-label="Show the whole board"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/><path d="M8 15l4-6 4 6z"/></svg></button>
+  <button id="camTop" title="From above" aria-label="View from above"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 12c2-4 6-4 8 0-2 4-6 4-8 0z"/><circle cx="12" cy="12" r="1.2"/></svg></button>
+  <button id="sndMute" title="Sound on/off" aria-label="Sound on or off" aria-pressed="false"></button>
+  <span class="sep"></span>
+  <button id="camDrive" title="Driver's view" aria-label="Driver's view from the current player's car" aria-pressed="false"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M3.8 10.5h6M14.2 10.5h6M12 14.2V20.5"/></svg></button>
+</div>
+<div class="camHint hidden" id="camHint">Drag to glide over the board · right-drag to turn · scroll to zoom where you point · double-click to swoop in</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script>
+%%SOUND%%
+</script>
+<script>
+%%ENGINE%%
+</script>
+<script>
+%%BOTS%%
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { mergeGeometries, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+
+const BOARD = %%BOARD%%;
+const SCENERY = %%SCENERY%%;
+%%BOARD3D%%
+
+const $ = id => document.getElementById(id);
+const E = HotelEngine, Bots = HotelBots, fmt = E.fmt;
+const COLS = ['var(--p0)','var(--p1)','var(--p2)','var(--p3)'];
+const PCOL = SCENERY.playerColours; // the same seat colours as hex, for the 3D board
+const HOTELS = Object.keys(BOARD.hotels);
+const SAVE_KEY = 'hotel-game-save';
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let view = null, state = null, acting = false, fast = false, botTimer = null;
+let seen = null; // last-synced snapshot of what the 3D board is showing
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button, summary'); if (!b || b.disabled) return;
+  if (b.closest('.thTile, .bpTile')) Sound.ui('select');
+  else if (['dieBtn', 'spinBtn', 'deedsClose', 'propCancel', 'sndMute', 'rulesStart', 'rulesGame', 'rulesDeeds', 'rulesClose'].includes(b.id)) return;
+  else if (b.tagName === 'SUMMARY') Sound.ui('toggle');
+  else Sound.ui('click');
+}, true);
+document.addEventListener('change', e => { if (e.target.matches('select, input[type=checkbox]')) Sound.ui('toggle'); }, true);
+function toast(t, kind) { Sound.play('notify', kind || 'info'); const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toast.h); toast.h = setTimeout(() => el.classList.remove('show'), 2600); }
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function wait(ms) { return new Promise(r => setTimeout(r, ms)); }
+const hname = id => BOARD.hotels[id].name;
+const pname = i => state.players[i].name;
+
+// ---------------------------------------------------------------- the die (CSS pips, so it always renders)
+const FACE_DOTS = { 1: ['c'], 2: ['tl', 'br'], 3: ['tl', 'c', 'br'], 4: ['tl', 'tr', 'bl', 'br'], 5: ['tl', 'tr', 'c', 'bl', 'br'], 6: ['tl', 'tr', 'ml', 'mr', 'bl', 'br'] };
+function setDieFace(n) { const on = new Set(FACE_DOTS[n]); $('dieBody').querySelectorAll('.pip').forEach(p => p.classList.toggle('on', on.has(p.dataset.p))); }
+let diceTimer = null, dieAction = null;
+function dieCaption(html) { $('dieCaption').innerHTML = html; $('dieCaption').classList.toggle('hidden', !html); }
+// waiting for a human to tap it
+function offerDie(a, html) {
+  if (dieAction === a) return;
+  dieAction = a; clearInterval(diceTimer);
+  const d = $('dice'); d.classList.remove('hidden', 'rolling', 'settled', 'aside'); d.classList.add('ready');
+  setDieFace(a.type === 'rollStay' ? 3 : 5); dieCaption(html);
+  $('dieBtn').tabIndex = 0; $('dieBtn').setAttribute('aria-label', a.type === 'rollStay' ? 'Roll for the number of nights' : 'Roll the die');
+}
+function withdrawDie() { if (!dieAction) return; dieAction = null; $('dieBtn').tabIndex = -1; const d = $('dice'); d.classList.remove('ready'); if (!d.classList.contains('rolling') && !d.classList.contains('settled')) d.classList.add('hidden'); }
+$('dieBtn').onclick = () => { const a = dieAction; if (a && !acting) doAction(a); };
+function rollDice(caption) {
+  dieAction = null; $('dieBtn').tabIndex = -1; clearInterval(diceTimer);
+  const d = $('dice'); d.classList.remove('hidden', 'ready', 'settled', 'aside'); d.classList.add('rolling');
+  dieCaption(caption || '');
+  Sound.play('dice');
+  setDieFace(1 + Math.floor(Math.random() * 6)); diceTimer = setInterval(() => setDieFace(1 + Math.floor(Math.random() * 6)), 85);
+}
+function settleDice(n, caption) { Sound.play('diceLand'); clearInterval(diceTimer); setDieFace(n); const d = $('dice'); d.classList.remove('rolling'); d.classList.add('settled'); if (caption !== undefined) dieCaption(caption); }
+function hideDice() { clearInterval(diceTimer); dieAction = null; const d = $('dice'); d.classList.add('hidden'); d.classList.remove('ready', 'rolling', 'settled', 'aside'); }
+
+// ---------------------------------------------------------------- planning permission spinner (big; tap it to spin)
+const SPIN_WEDGES = ['green', 'green', 'green', 'red', 'H', '2'];
+const SPIN_TEXT = { green: 'Green — permission granted', red: 'Red — permission refused', H: 'H — built free of charge!', '2': '2 — granted at double cost' };
+let spinAction = null;
+function resetNeedle() { const n = $('needle'); if (typeof needleAnim !== 'undefined' && needleAnim) { try { needleAnim.cancel(); } catch (e) {} needleAnim = null; } n.style.transition = 'none'; n.style.transform = 'translate(-50%,-100%) rotate(0deg)'; }
+function offerSpinner(a, html) {
+  if (spinAction === a) return;
+  spinAction = a; resetNeedle();
+  const b = $('spinnerBox'); b.classList.remove('hidden'); b.classList.add('ready');
+  $('spinLabel').className = 'caption spinLabel'; $('spinLabel').innerHTML = html; $('spinBtn').tabIndex = 0;
+}
+function withdrawSpinner() { if (!spinAction) return; spinAction = null; $('spinBtn').tabIndex = -1; $('spinnerBox').classList.remove('ready'); if (!acting) $('spinnerBox').classList.add('hidden'); }
+$('spinBtn').onclick = () => { const a = spinAction; if (a && !acting) doAction(a); };
+function startSpinner(html) {
+  spinAction = null; $('spinBtn').tabIndex = -1;
+  const b = $('spinnerBox'); if (b.classList.contains('hidden')) resetNeedle(); b.classList.remove('hidden', 'ready');
+  $('spinLabel').className = 'caption spinLabel'; $('spinLabel').innerHTML = html || 'Spinning…';
+  Sound.play('spinStart');
+}
+// The needle is driven by the Web Animations API and the verdict waits for it to actually stop, so even on a
+// slow frame the result is never announced while the needle is still resting at the top (next to ×2).
+let needleAnim = null, needleAngle = 0;
+function settleSpinner(result) {
+  Sound.play('spinSettle', null);
+  const n = $('needle');
+  const idxs = SPIN_WEDGES.map((v, i) => v === result ? i : -1).filter(i => i >= 0);
+  const i = idxs[Math.floor(Math.random() * idxs.length)];
+  const to = 4 * 360 + i * 60 + 10 + Math.random() * 40;
+  if (needleAnim) { try { needleAnim.cancel(); } catch (e) {} }
+  n.style.transition = 'none'; n.style.transform = `translate(-50%,-100%) rotate(${to}deg)`;
+  const show = () => { $('spinLabel').textContent = SPIN_TEXT[result]; $('spinLabel').className = 'caption spinLabel result ' + (result === '2' ? 'two' : result); Sound.play('verdict', result); };
+  if (reduceMotion || !n.animate) { show(); return Promise.resolve(); }
+  needleAnim = n.animate([{ transform: 'translate(-50%,-100%) rotate(0deg)' }, { transform: `translate(-50%,-100%) rotate(${to}deg)` }], { duration: 2100, easing: 'cubic-bezier(.12,.82,.2,1)' });
+  return new Promise(res => { let done = false; const fin = () => { if (done) return; done = true; show(); res(); };
+    const anim = needleAnim; anim.finished.then(fin, fin);
+    // if frames have stalled (a busy phone), snap the needle to where it lands rather than announce a result it isn't showing
+    setTimeout(() => { if (done) return; try { anim.finish(); } catch (e) {} fin(); }, 4500); });
+}
+function hideSpinner() { spinAction = null; $('spinnerBox').classList.add('hidden'); $('spinnerBox').classList.remove('ready'); }
+
+// ---------------------------------------------------------------- the landed space: a big picture of the square, then pinned until the turn ends
+const SPACE_LABEL = { start: 'Start', buy: 'Buying space', build: 'Planning permission', freeEntrance: 'Free entrance', freeBuild: 'Build one phase free' };
+let landedTimer = null;
+// Pictures of each space, encoded once off the main thread and kept as blob URLs. They are prepared in idle time
+// after the board loads, so a landing never has to wait for one.
+const spaceImgs = {}, spaceImgWaiting = {};
+function spaceImgUrl(pos, cb) {
+  if (spaceImgs[pos]) return cb && cb(spaceImgs[pos]);
+  if (spaceImgWaiting[pos]) { if (cb) spaceImgWaiting[pos].push(cb); return; }
+  const c = view && view.spaceImage(pos, 300, true); if (!c) return cb && cb(null);
+  spaceImgWaiting[pos] = cb ? [cb] : [];
+  c.toBlob(b => { spaceImgs[pos] = b ? URL.createObjectURL(b) : null; const w = spaceImgWaiting[pos]; delete spaceImgWaiting[pos]; w.forEach(f => f(spaceImgs[pos])); }, 'image/png');
+}
+function setLandedImg(pos) {
+  const im = $('landedImg'); im.dataset.pos = pos;
+  spaceImgUrl(pos, url => { if (im.dataset.pos !== String(pos)) return; if (url) { im.src = url; im.classList.remove('hidden'); } else im.classList.add('hidden'); });
+}
+function prepareSpaceImages() {
+  let k = 0; const idle = window.requestIdleCallback || (f => setTimeout(f, 200));
+  const next = () => { if (k >= BOARD.spaces.length) return; spaceImgUrl(k++); idle(next); };
+  idle(next);
+}
+function showLandedSpace(pos, player) {
+  const sp = BOARD.spaces[pos], hotels = [sp.inner, sp.outer].filter(Boolean), el = $('landed');
+  $('landedWho').innerHTML = `<span class="sw" style="background:${COLS[player.seat]}"></span>${esc(player.name)} lands on`;
+  setLandedImg(pos);
+  $('landedImg').alt = SPACE_LABEL[sp.type] || sp.type;
+  $('landedType').textContent = SPACE_LABEL[sp.type] || sp.type;
+  $('landedCard').style.setProperty('--accent', hotels.length ? SCENERY.landColours[hotels[0]] : 'var(--gold)');
+  el.classList.remove('hidden', 'leaving'); el.classList.add('pinned'); landedAt = 0; // straight into the top-left corner Sound.play('landed', sp.type);
+  const card = $('landedCard'); card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+  clearTimeout(landedTimer);
+}
+let landedAt = 0;
+$('landedCard').addEventListener('click', () => { Sound.ui('close'); hideLanded(); if (placeDecision.pending) { clearTimeout(placeDecision.t); placeDecision.pending(); } });
+function pinLanded() { clearTimeout(landedTimer); if (!$('landed').classList.contains('hidden')) $('landed').classList.add('pinned'); }
+function hideLanded() { clearTimeout(landedTimer); const el = $('landed'); if (el.classList.contains('hidden')) return; el.classList.add('leaving'); landedTimer = setTimeout(() => { el.classList.add('hidden'); el.classList.remove('leaving', 'pinned'); }, 400); }
+
+// ---------------------------------------------------------------- the planning application: what's proposed and what each spinner result would cost
+let proposalSeen = null;
+const proposalKey = () => `${state.turn}|${state.pending.player}|${state.pending.hotel}|${state.pending.stages}`;
+// a simple "are you sure?" box; resolves true if confirmed
+function confirmBox(title, html, yesLabel) {
+  return new Promise(res => {
+    $('confirmTitle').textContent = title; $('confirmText').innerHTML = html; $('confirmYes').textContent = yesLabel || 'Yes';
+    $('confirmBox').classList.remove('hidden'); Sound.play('notify', 'bad'); $('confirmNo').focus();
+    const done = v => { $('confirmBox').classList.add('hidden'); $('confirmYes').onclick = $('confirmNo').onclick = null; res(v); };
+    $('confirmYes').onclick = () => done(true); $('confirmNo').onclick = () => done(false);
+  });
+}
+function showProposal(human) {
+  Sound.ui('open');
+  const d = state.pending, p = state.players[d.player], h = BOARD.hotels[d.hotel], from = state.plots[d.hotel].built;
+  const works = []; for (let j = from; j < from + d.stages; j++) works.push(h.stages[j]);
+  const after = n => p.cash - n, money = n => fmt(n);
+  const dbl = d.cost * 2, canDbl = p.cash >= dbl;
+  const el = $('proposal');
+  el.innerHTML = `<div class="propDoc" style="position:relative">
+    <div class="propHead" style="--c:${SCENERY.landColours[d.hotel]}"><div class="kick">Hotel Borough Council · Planning Department</div><h3>Planning application</h3></div>
+    <div class="propBody">
+      <div class="propRow"><span>Applicant</span><b><span class="chip" style="background:${COLS[p.seat]}"></span>${esc(p.name)}</b></div>
+      <div class="propRow"><span>Site</span><b><span class="chip" style="background:${SCENERY.landColours[d.hotel]};border-radius:2px"></span>The ${esc(h.name)}</b></div>
+      <table class="propWorks"><tbody>${works.map(([name, cost]) => `<tr><td>${esc(name)}</td><td class="num">${money(cost)}</td></tr>`).join('')}<tr class="total"><td>Cost of works</td><td class="num">${money(d.cost)}</td></tr></tbody></table>
+      <div class="propOutT">The committee will decide by the spinner</div>
+      <table class="propOut"><tbody>
+        <tr><td><span class="sw" style="background:#3fa34d">GREEN</span>Approved<span class="odds">3 in 6</span></td><td class="num">pay ${money(d.cost)}</td></tr>
+        <tr><td><span class="sw" style="background:#2f79c9">×2</span>Approved at double cost<span class="odds">1 in 6</span>${canDbl ? '' : `<span class="warn">${esc(p.name)} has only ${money(p.cash)} — a hotel would go to auction</span>`}</td><td class="num">pay ${money(dbl)}</td></tr>
+        <tr><td><span class="sw" style="background:#d9a90f">H</span>Approved free of charge<span class="odds">1 in 6</span></td><td class="num">pay 0</td></tr>
+        <tr><td><span class="sw" style="background:#d0342c">RED</span>Refused — nothing is built<span class="odds">1 in 6</span></td><td class="num">pay 0</td></tr>
+      </tbody></table>
+      <div class="propFoot"><span class="note">${esc(p.name)} has ${money(p.cash)}</span>${human ? '<span class="propBtns"><button id="propCancel" class="propCancel">Cancel application</button><button id="propGo">Submit &amp; spin</button></span>' : `<span class="note">${esc(p.name)} is submitting…</span>`}</div>
+    </div></div>`;
+  el.classList.remove('hidden');
+  if (human) { $('propCancel').onclick = () => { Sound.ui('back'); hideProposal(); proposalSeen = null; $('proposal').dataset.key = ''; doAction({ type: 'withdraw', player: d.player }); };
+    $('propGo').onclick = async () => {
+      // short of money for a ×2? make sure it's deliberate
+      const dd = state.pending, pp = state.players[dd.player];
+      if (pp.cash < dd.cost * 2) {
+        const short = pp.cash < dd.cost;
+        const okGo = await confirmBox(short ? 'You can\'t afford this' : 'Not enough for a ×2', short
+          ? `These works cost <b>${fmt(dd.cost)}</b> but you only have <b>${fmt(pp.cash)}</b>. If permission is granted you'll have to sell property at auction to pay.`
+          : `If the spinner lands on <b>×2</b> the works cost <b>${fmt(dd.cost * 2)}</b> — you have <b>${fmt(pp.cash)}</b>. You'd have to sell property at auction to pay the difference.`, 'Submit anyway');
+        if (!okGo) return;
+      }
+      proposalSeen = proposalKey(); hideProposal(); render(); setTimeout(() => { if (spinAction && !acting) doAction(spinAction); }, reduceMotion ? 0 : 650); }; $('propGo').focus(); }
+}
+function hideProposal() { $('proposal').classList.add('hidden'); }
+
+// ---------------------------------------------------------------- setup screen
+const seatsEl = $('seats');
+for (let i = 0; i < 4; i++) {
+  const d = document.createElement('div'); d.className = 'seat';
+  d.innerHTML = `<span class="sw" style="background:${COLS[i]}"></span><input type="text" id="name${i}" placeholder="Seat ${i + 1} name" value="${['Player 1', 'Computer 1', 'Computer 2', ''][i]}"><select id="kind${i}"><option value="human">Human</option><option value="easy">Computer</option><option value="none">Empty</option></select>`;
+  seatsEl.appendChild(d);
+  d.querySelector('select').value = i === 0 ? 'human' : i < 3 ? 'easy' : 'none';
+}
+function saveGame() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {} }
+function loadGame() { try { const s = localStorage.getItem(SAVE_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+if (loadGame()) $('resumeBtn').classList.remove('hidden');
+
+$('startBtn').onclick = () => {
+  const players = [];
+  for (let i = 0; i < 4; i++) { const k = $('kind' + i).value; if (k === 'none') continue; players.push({ name: $('name' + i).value.trim() || `Seat ${i + 1}`, ai: k === 'human' ? null : k, seat: i }); }
+  if (players.length < 2) { toast('Need at least two seats.', 'bad'); return; }
+  state = E.createGame(BOARD, { players, autoClaim: !$('claimMode').checked });
+  state.players.forEach((p, i) => p.seat = players[i].seat);
+  state.news = [];
+  beginGame();
+  addStories([{ k: 'Good evening', h: 'A new day for the Hotel strip', s: `${state.players.length} tycoons start with ${fmt(12000)} each. ${pname(state.current)} goes first.` }]);
+};
+$('resumeBtn').onclick = () => { state = loadGame(); if (state) { state.news = state.news || []; beginGame(); } };
+$('newBtn').onclick = () => {
+  clearTimeout(botTimer);
+  try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+  if (view.isDriverView()) setDriver(false);
+  finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
+  resetBoard(); hideDice(); hideSpinner(); hideLanded(); closeDeeds(); hideProposal(); proposalSeen = null;
+  $('gamePanel').classList.add('hidden'); $('setupPanel').classList.remove('hidden');
+  $('tv').classList.add('hidden'); $('camDock').classList.add('hidden'); hideMats();
+  $('resumeBtn').classList.add('hidden'); state = null;
+  view.flyTo('home');
+};
+$('fastBtn').onclick = () => { fast = !fast; $('fastBtn').textContent = 'Computer speed: ' + (fast ? 'fast' : 'normal'); view.setDriveSpeed(fast ? 1.8 : 1); };
+$('tilt').onclick = () => { const b = $('tilt'), on = !b.classList.contains('on'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); view.setTiltShift(on); };
+$('toggle').onclick = () => { autoOpened = false; const p = $('gamePanel'), min = !p.classList.contains('min'); p.classList.toggle('min', min); $('toggle').textContent = min ? 'Play' : 'Hide'; $('toggle').setAttribute('aria-expanded', !min); };
+$('timeSel').onchange = e => view.setTimeMode(e.target.value);
+$('wxSel').onchange = e => view.setWeather(e.target.value);
+// sound settings (Table options) and the speaker button by the camera controls
+function syncSoundUI() { const p = Sound.prefs; $('musOn').checked = p.music; $('sfxOn').checked = p.sfx; $('musVol').value = p.musicVol; $('sfxVol').value = p.sfxVol; const on = p.music || p.sfx; $('sndMute').classList.toggle('on', !on); $('sndMute').setAttribute('aria-pressed', !on); $('sndMute').innerHTML = on ? SND_ON : SND_OFF; }
+const SND_ON = '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></svg>';
+const SND_OFF = '<svg viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>';
+$('musOn').onchange = e => { Sound.init(); Sound.set('music', e.target.checked); syncSoundUI(); };
+$('sfxOn').onchange = e => { Sound.init(); Sound.set('sfx', e.target.checked); syncSoundUI(); };
+$('musVol').oninput = e => Sound.set('musicVol', +e.target.value);
+$('sfxVol').oninput = e => { Sound.set('sfxVol', +e.target.value); };
+$('sfxVol').onchange = () => Sound.ui('select');
+$('sndMute').onclick = () => { Sound.init(); Sound.toggleMute(); syncSoundUI(); Sound.ui('toggle'); };
+syncSoundUI();
+$('sndCredits').innerHTML = (Sound.credits || []).map(c => `<li>${esc(c)}</li>`).join('');
+// Auto remembers when this device needed the lite profile, so the next game starts there instead of stuttering first.
+// Picking Auto again from the menu forgets that and lets the device try the full look again.
+// Auto remembers which tier this device ended up needing (hotelAutoTier), so the next game starts there instead of
+// stuttering first. Picking Auto again from the menu forgets that and lets the device try the full look again.
+let plainForced = null; // null: follow Auto; true/false: set by the Plain panels switch
+$('gfxSel').onchange = e => {
+  const q = e.target.value; if (q === 'custom') return;
+  try { localStorage.setItem('hotelGfx', q); localStorage.removeItem('hotelAutoTier'); localStorage.removeItem('hotelAutoLite'); } catch (er) {}
+  plainForced = null; $('sharpSel').value = 'auto'; view.setQuality(q, { tier: 'full' });
+};
+document.querySelectorAll('.perfLab input[data-opt]').forEach(cb => cb.onchange = () => { view.setOptions({ [cb.dataset.opt]: cb.checked }); $('gfxSel').value = 'custom'; });
+$('plainOn').onchange = e => { plainForced = e.target.checked; document.body.classList.toggle('lite', plainForced); };
+$('sharpSel').onchange = e => { view.setSharpness(e.target.value); if (e.target.value !== 'auto') $('gfxSel').value = 'custom'; };
+let fpsTimer = null;
+$('fpsOn').onchange = e => {
+  $('fpsBox').classList.toggle('hidden', !e.target.checked); clearInterval(fpsTimer);
+  if (e.target.checked) fpsTimer = setInterval(() => { const p = view.perfState(); $('fpsBox').textContent = `${p.fps} fps${p.idle ? ' (idle)' : ''} · ${p.tier} · ${p.pr}×`; }, 500);
+};
+try { let q = localStorage.getItem('hotelGfx'); if (q === 'high' && !localStorage.getItem('hotelGfxV')) q = 'auto'; localStorage.setItem('hotelGfxV', '2'); if (q && q !== 'custom') $('gfxSel').value = q; } catch (er) {}
+
+function hideMats() { $('scoreBar').classList.add('hidden'); document.documentElement.style.setProperty('--barH', '0px'); }
+function resetBoard() {
+  for (const id of HOTELS) { view.setHotel(id, 0, false, false); view.setOwner(id, null, false); }
+  for (const sp in (seen ? seen.entrances : {})) view.setEntrance(+sp, null);
+  for (let i = 0; i < 4; i++) view.moveCar(i, -1, false);
+  view.clearEntranceChoices();
+  seen = freshSeen();
+}
+const freshSeen = () => ({ entrances: {}, hotels: Object.fromEntries(HOTELS.map(id => [id, { built: 0, facilities: false }])), cars: [-1, -1, -1, -1], owners: Object.fromEntries(HOTELS.map(id => [id, null])) });
+
+function beginGame() {
+  $('setupPanel').classList.add('hidden'); $('gamePanel').classList.remove('hidden');
+  $('camDock').classList.remove('hidden'); // the news TV is retired: the menu lives in its corner now
+  showCamHint();
+  seen = freshSeen();
+  for (let i = 0; i < 4; i++) view.setCar(i, state.players.some(p => p.seat === i));
+  syncAll(false);
+  render(); fitInset();
+  view.flyTo('home');
+  renderTV(true);
+  tick();
+}
+
+// ---------------------------------------------------------------- 3D sync
+const ownerColour = id => { const o = state.plots[id].owner; return o === null ? null : PCOL[state.players[o].seat]; };
+function syncAll(animate) {
+  for (const id of HOTELS) { const p = state.plots[id]; view.setHotel(id, p.built, p.facilities, animate); seen.hotels[id] = { built: p.built, facilities: p.facilities }; view.setOwner(id, ownerColour(id), animate); seen.owners[id] = state.plots[id].owner; }
+  for (const sp in state.entrances) { view.setEntrance(+sp, state.entrances[sp], animate); }
+  seen.entrances = Object.assign({}, state.entrances);
+  state.players.forEach(p => { view.moveCar(p.seat, p.active ? p.pos : -1, animate); seen.cars[p.seat] = p.pos; if (!p.active) view.setCar(p.seat, false); });
+}
+function syncOwners(animate) {
+  for (const id of HOTELS) { const o = state.plots[id].owner; if (o !== seen.owners[id]) { view.setOwner(id, ownerColour(id), animate); seen.owners[id] = o; } }
+}
+// Applies just the parts of state that changed since the last sync, with a little pacing.
+// what each thing that happened sounds like (good news chimes, bad news groans)
+function eventSounds(ev) {
+  let d = 0; const at = (fn, ms) => setTimeout(fn, ms);
+  for (const e of ev) switch (e.type) {
+    case 'bank': at(() => Sound.play('cashIn'), d); d += 500; break;
+    case 'stay': at(() => Sound.play('cashOut'), d); at(() => Sound.play('cashIn'), d + 450); d += 900; break;
+    case 'land': if (e.from === undefined) { at(() => Sound.play('buyLand'), d); d += 500; } break;
+    case 'entrance': at(() => Sound.play('entrance'), d + 300); d += 500; break;
+    case 'auctionStart': at(() => Sound.play('gavel', 1), d); d += 400; break;
+    case 'auctionSold': at(() => Sound.play('gavel', 3), d); at(() => Sound.play('cashIn'), d + 900); d += 1200; break;
+    case 'demolished': at(() => Sound.play('demolish'), d); d += 900; break;
+    case 'debt': at(() => Sound.play('debt'), d); d += 900; break;
+    case 'bankrupt': at(() => Sound.play('bankrupt'), d); d += 2500; break;
+    case 'win': at(() => Sound.play('win'), d); break;
+  }
+}
+const celebrateBonus = {}; // hotel -> fireworks level owed (a free build from the spinner)
+async function sync3D(mover) {
+  if (mover !== undefined) {
+    const p = state.players.find(q => q.seat === mover);
+    const to = p && p.active ? p.pos : -1;
+    if (to !== seen.cars[mover]) { seen.cars[mover] = to; await view.moveCar(mover, to, true); }
+    else if (p && !p.active) view.setCar(mover, false);
+  }
+  state.players.forEach(p => { const to = p.active ? p.pos : -1; if (to !== seen.cars[p.seat]) { seen.cars[p.seat] = to; view.moveCar(p.seat, to, true); if (!p.active) setTimeout(() => view.setCar(p.seat, false), 900); } });
+  let changedHotel = null, newBuild = null, party = 0, partyAt = null;
+  for (const id of HOTELS) {
+    const p = state.plots[id], was = seen.hotels[id];
+    if (p.built !== was.built || p.facilities !== was.facilities) {
+      const box = view.setHotel(id, p.built, p.facilities, true); seen.hotels[id] = { built: p.built, facilities: p.facilities }; changedHotel = id; if (box) newBuild = box;
+      // the better the news, the bigger the show: a completed hotel, then the leisure facilities on top
+      const n = BOARD.hotels[id].stages.length - 1;
+      let lvl = p.facilities && !was.facilities ? 4 : p.built === n && was.built < n ? 3 : 0;
+      lvl = Math.max(lvl, celebrateBonus[id] || 0); delete celebrateBonus[id];
+      if (lvl > party) { party = lvl; partyAt = { hotel: id, box }; }
+    }
+  }
+  if (party) view.fireworks(partyAt.box || partyAt.hotel, party);
+  let newEntrance = null;
+  for (const sp in state.entrances) if (seen.entrances[sp] === undefined) { const box = view.setEntrance(+sp, state.entrances[sp], true); changedHotel = changedHotel || state.entrances[sp]; if (box) newEntrance = box; }
+  for (const sp in seen.entrances) if (state.entrances[sp] === undefined) view.setEntrance(+sp, null);
+  seen.entrances = Object.assign({}, state.entrances);
+  if (mover !== undefined) {
+    const p = state.players.find(q => q.seat === mover);
+    if (p && p.active && p.pos >= 0) view.flyTo({ space: p.pos });
+  } else if (newBuild) await view.showcase(newBuild, 4.8); // everyone watches it go up
+  else if (newEntrance) await view.showcase(newEntrance, 3.4, 3.2); // and sees where the new entrance went
+  else if (changedHotel) view.flyTo(changedHotel);
+}
+
+// ---------------------------------------------------------------- property changing hands: the takeover animation
+const matFor = seat => { const el = $('pseg' + seat); return el && el.offsetParent !== null ? el : null; };
+function centreOf(el) { if (!el) return { x: innerWidth / 2 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--insetL')) || 0) / 2, y: innerHeight * 0.45 }; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; }
+function fly(el, from, to, opts) {
+  opts = opts || {};
+  document.body.appendChild(el);
+  const w = el.offsetWidth, h = el.offsetHeight, lift = opts.lift === undefined ? 120 : opts.lift;
+  const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - lift };
+  const tf = (p, s, r) => `translate(${p.x - w / 2}px,${p.y - h / 2}px) scale(${s}) rotate(${r}deg)`;
+  const anim = el.animate([
+    { transform: tf(from, opts.s0 || 0.6, -8), opacity: 0 },
+    { transform: tf(from, opts.s1 || 1.15, -4), opacity: 1, offset: 0.15 },
+    { transform: tf(mid, opts.s1 || 1.15, 6), opacity: 1, offset: 0.55 },
+    { transform: tf(to, opts.s2 || 0.5, 0), opacity: 0.9 }
+  ], { duration: reduceMotion ? 1 : (opts.ms || 1200), delay: opts.delay || 0, easing: 'cubic-bezier(.45,.05,.3,1)', fill: 'both' });
+  anim.onfinish = () => el.remove();
+  return anim.finished.catch(() => {});
+}
+function deedCardEl(id) {
+  const h = BOARD.hotels[id], n = h.stages.length - 1, el = document.createElement('div');
+  el.className = 'flyer deedCard';
+  el.innerHTML = `<div class="dTop" style="background:${SCENERY.landColours[id]}">${esc(h.name)}</div><div class="dBody"><div class="dStars">${'<span></span>'.repeat(n + 1)}</div><div class="dRate">TITLE DEED</div></div>`;
+  return el;
+}
+function stamp(title, sub) {
+  Sound.play('takeover');
+  const s = $('stamp'); s.innerHTML = `${esc(title)}<small>${esc(sub)}</small>`;
+  s.classList.remove('go'); void s.offsetWidth; s.classList.add('go');
+}
+function pulseMat(seat) { const m = matFor(seat); if (!m) return; m.classList.remove('pulse'); void m.offsetWidth; m.classList.add('pulse'); }
+async function animateTransfers(ev) {
+  for (const e of ev) {
+    if (e.type === 'land' || e.type === 'auctionSold') {
+      const buyer = state.players[e.player], colour = PCOL[buyer.seat];
+      const forced = e.type === 'land' && e.from !== undefined, auction = e.type === 'auctionSold';
+      if (forced || auction) {
+        const seller = state.players[e.from], price = auction ? e.amount : BOARD.hotels[e.hotel].compulsory;
+        view.flyTo(e.hotel);
+        if (forced) view.saleSign(e.hotel, colour);
+        stamp(forced ? 'Compulsory purchase' : 'Sold at auction', forced ? `${buyer.name} forces ${seller.name} to sell the ${hname(e.hotel)} for ${fmt(price)}` : `${buyer.name} buys the ${hname(e.hotel)} from ${seller.name} for ${fmt(price)}`);
+        await wait(reduceMotion ? 0 : 750);
+        view.setOwner(e.hotel, colour, true); seen.owners[e.hotel] = e.player;
+        const fromMat = matFor(seller.seat), toMat = matFor(buyer.seat);
+        const notes = billBreakdown(price).flatMap(([d, n]) => Array(Math.min(n, 3)).fill(d)).slice(0, 6);
+        const flights = [fly(deedCardEl(e.hotel), centreOf(fromMat), centreOf(toMat), { ms: 1500, lift: 150, s1: 1.5, s2: 0.55 })];
+        notes.forEach((d, k) => { const t = document.createElement('div'); t.innerHTML = noteHTML(d, 0, 'flyer'); const b = t.firstChild; flights.push(fly(b, centreOf(toMat), centreOf(fromMat), { ms: 1100, delay: 250 + k * 110, lift: 70, s1: 1.3, s2: 0.7 })); });
+        await Promise.all(flights);
+        pulseMat(buyer.seat); pulseMat(seller.seat);
+        await wait(reduceMotion ? 0 : 900);
+      } else {
+        view.setOwner(e.hotel, colour, true); seen.owners[e.hotel] = e.player;
+        await fly(deedCardEl(e.hotel), centreOf(null), centreOf(matFor(buyer.seat)), { ms: 1000, lift: 60, s1: 1.4, s2: 0.55 });
+        pulseMat(buyer.seat);
+      }
+    } else if (e.type === 'demolished') { view.setOwner(e.hotel, null, true); seen.owners[e.hotel] = null; if (e.bank && e.from !== undefined) stamp('Bought by the Bank', `No bids — the Bank pays ${state.players[e.from].name} ${fmt(e.amount)} and knocks the ${hname(e.hotel)} down`); }
+  }
+}
+
+// ---------------------------------------------------------------- turn loop
+// what the computer players are doing, as a little running feed under the player bar
+const BOT_ICON = { buyLand: '£', declare: '⌂', buyEntrance: '⇥', placeEntrance: '⇥', freeBuild: '★', buyFacilities: '≋', bid: '⚖', auctionLot: '⚖', pass: '·', withdraw: '✕' };
+function botNote(a, actor) {
+  if (!actor || !actor.ai) return;
+  const H = id => esc(hname(id)), who = `<b>${esc(actor.name)}</b>`;
+  let txt = null, amt = '', hc = null;
+  switch (a.type) {
+    case 'buyLand': txt = a.compulsory ? `${who} forces ${esc(pname(a.from))} to sell the ${H(a.hotel)} land` : `${who} buys the ${H(a.hotel)} land`; amt = fmt(a.cost); hc = a.hotel; break;
+    case 'declare': txt = `${who} applies to build at the ${H(a.hotel)}`; amt = fmt(a.cost); hc = a.hotel; break;
+    case 'buyEntrance': txt = `${who} buys an entrance to the ${H(a.hotel)}`; amt = fmt(a.cost); hc = a.hotel; break;
+    case 'placeEntrance': txt = `${who} places a free entrance to the ${H(a.hotel)}`; hc = a.hotel; break;
+    case 'freeBuild': txt = `${who} builds ${a.facilities ? 'leisure facilities' : 'a free phase'} at the ${H(a.hotel)}`; hc = a.hotel; break;
+    case 'buyFacilities': txt = `${who} adds leisure facilities to the ${H(a.hotel)}`; amt = fmt(a.cost); hc = a.hotel; break;
+    case 'auctionLot': txt = `${who} puts the ${H(a.hotel)} up for auction`; hc = a.hotel; break;
+    case 'bid': txt = `${who} bids`; amt = fmt(a.amount); hc = state.auction && state.auction.lot; break;
+    case 'pass': txt = state.phase === 'buy' ? `${who} decides not to buy` : state.phase === 'build' ? `${who} decides not to build` : state.phase === 'auction' ? `${who} passes` : null; break;
+  }
+  if (!txt) return;
+  const el = document.createElement('div'); el.className = 'botNote'; el.style.setProperty('--pc', COLS[actor.seat]);
+  el.innerHTML = `<span class="ic" style="--hc:${hc ? SCENERY.landColours[hc] : COLS[actor.seat]}">${BOT_ICON[a.type] || '•'}</span><span>${txt}</span>${amt ? `<span class="amt">${amt}</span>` : ''}`;
+  const feed = $('botFeed'); feed.appendChild(el);
+  while (feed.children.length > 3) feed.removeChild(feed.firstChild);
+  Sound.play('notify', 'info');
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 500); }, fast ? 3000 : 5000);
+}
+// ---------------------------------------------------------------- landing on someone else's hotel: what each roll of the die will cost
+let stayKey = null;
+function showStay() {
+  const d = state.pending, g = state.players[d.player], id = d.hotel, h = BOARD.hotels[id], owner = state.players[state.plots[id].owner];
+  const key = state.turn + '|' + d.player + '|' + id; if (stayKey === key) return; stayKey = key;
+  const rate = E.nightlyRate(BOARD, state, id), stars = E.stars(BOARD, state, id), col = SCENERY.landColours[id];
+  const dots = n => { const on = new Set(FACE_DOTS[n]); return ['tl', '', 'tr', 'ml', 'c', 'mr', 'bl', '', 'br'].map(p => `<i class="${p && on.has(p) ? 'on' : ''}"></i>`).join(''); };
+  const cells = [1, 2, 3, 4, 5, 6].map(n => `<div class="stayCell ${g.cash < n * rate ? 'cant' : ''}" data-n="${n}"><div class="pips">${dots(n)}</div><div class="n">${n} night${n > 1 ? 's' : ''}</div><div class="c">${fmt(n * rate)}</div></div>`).join('');
+  const short = [1, 2, 3, 4, 5, 6].filter(n => g.cash < n * rate);
+  const el = $('stayCard'); el.style.setProperty('--hc', col); el.classList.remove('hidden', 'done');
+  el.innerHTML = `<div class="stayIn" style="--hc:${col}"><div class="stayHead"><div class="k">Checking in at</div><div class="h">The ${esc(h.name)}</div><div class="st">${'★'.repeat(stars)}${'☆'.repeat(Math.max(0, h.stages.length - stars))}</div></div>
+    <div class="stayWho"><span class="sw" style="background:${COLS[g.seat]}"></span><b>${esc(g.name)}</b> is a guest of <span class="sw" style="background:${COLS[owner.seat]}"></span><b>${esc(owner.name)}</b></div>
+    <div class="stayRate">Roll the die for the number of nights · <b>${fmt(rate)}</b> a night</div>
+    <div class="stayGrid">${cells}</div>
+    ${short.length ? `<div class="stayFoot">${esc(g.name)} has ${fmt(g.cash)} — <b>${short.length === 6 ? 'any roll' : short.length === 1 ? 'a 6' : `a ${short[0]} or more`}</b> means selling property to pay.</div>` : ''}
+    <div class="stayResult hidden" id="stayResult"></div></div>`;
+  document.body.classList.add('staying');
+  Sound.play('stayAlert');
+}
+function settleStay(st) {
+  const el = $('stayCard'); if (el.classList.contains('hidden')) return;
+  el.classList.add('done'); const c = el.querySelector(`.stayCell[data-n="${st.nights}"]`); if (c) c.classList.add('hit');
+  const r = $('stayResult'); if (r) { r.classList.remove('hidden'); r.textContent = `${st.nights} night${st.nights > 1 ? 's' : ''} · ${fmt(st.amount)} to ${pname(st.to)}`; }
+}
+function hideStay() { stayKey = null; $('stayCard').classList.add('hidden'); document.body.classList.remove('staying'); }
+
+// ---------------------------------------------------------------- the end of the game: victory music, the losers' hotels come down, fireworks over the winner's
+let finaleDone = false, finaleToken = 0;
+async function finale(winnerId) {
+  if (finaleDone) return; finaleDone = true; const tok = ++finaleToken;
+  const w = state.players[winnerId], sum = E.summary(state, BOARD).find(p => p.id === winnerId) || {};
+  const mine = HOTELS.filter(id => state.plots[id].owner === winnerId), others = HOTELS.filter(id => state.plots[id].owner !== winnerId && (state.plots[id].built > 0 || state.plots[id].owner !== null));
+  hideStay(); hideLanded(); hideDice(); hideSpinner(); hideProposal(); closeDeeds(); placeDecision(false);
+  if (view.isDriverView()) setDriver(false);
+  Sound.victory(true);
+  const ents = Object.values(state.entrances).filter(id => mine.includes(id)).length, built = mine.reduce((n, id) => n + state.plots[id].built, 0);
+  const b = $('winBanner');
+  b.innerHTML = `<div class="winIn" style="--pc:${COLS[w.seat]}"><div class="crown">👑</div><div class="k">Hotel Tycoon</div><div class="name">${esc(w.name)}</div><div class="sub">${esc(w.name)} wins the game!</div>
+    <div class="stats"><div>Cash<b>${fmt(w.cash)}</b></div><div>Hotels<b>${mine.length}</b></div><div>Buildings<b>${built}</b></div><div>Entrances<b>${ents}</b></div></div>
+    <div class="btns2"><button id="winLook">Watch the celebrations</button><button id="winNew" class="go">New game</button></div></div>`;
+  b.classList.remove('hidden', 'small');
+  $('winLook').onclick = () => b.classList.add('small');
+  $('winNew').onclick = () => { b.classList.add('hidden'); $('newBtn').click(); };
+  view.flyTo('finale');
+  await wait(1600);
+  // the competition is demolished, one hotel after another
+  for (const id of others) {
+    if (tok !== finaleToken) return;
+    view.setHotel(id, 0, false, true); view.setOwner(id, null, true);
+    for (const sp in state.entrances) if (state.entrances[sp] === id) view.setEntrance(+sp, null);
+    Sound.play('demolish');
+    await wait(reduceMotion ? 50 : 700);
+  }
+  await wait(500);
+  // the winner's unfinished hotels are completed, every building and the leisure facilities, one after another
+  for (const id of mine) {
+    if (tok !== finaleToken) return;
+    const n = BOARD.hotels[id].stages.length - 1, pl = state.plots[id];
+    if (pl.built >= n && pl.facilities) continue;
+    view.setHotel(id, n, true, true); Sound.board('buildStart', { dist: 8, pan: 0 });
+    await wait(reduceMotion ? 50 : 2600);
+  }
+  await wait(800);
+  // fireworks over every one of the winner's hotels, then a grand finale over the whole board
+  if (tok !== finaleToken) return;
+  mine.forEach((id, k) => setTimeout(() => view.fireworks(id, 4), k * 900));
+  setTimeout(() => view.fireworks('board', 4), mine.length * 900 + 1500);
+  setTimeout(() => { mine.forEach((id, k) => setTimeout(() => view.fireworks(id, 3), k * 600)); }, mine.length * 900 + 7000);
+}
+
+async function doAction(a) {
+  if (acting || !state || state.winner !== null) return;
+  acting = true;
+  const actor = state.players[a.player], moverSeat = actor ? actor.seat : undefined;
+  const isRoll = a.type === 'roll', isStay = a.type === 'rollStay', isSpin = a.type === 'spin';
+  botNote(a, actor);
+  const ctx = { spinHotel: isSpin ? state.pending.hotel : null, spinStages: isSpin ? state.pending.stages : 0, actor: a.player };
+  if (isRoll) { hideLanded(); }
+  if (isRoll || isStay) rollDice(isStay ? `<span class="sw" style="background:${COLS[moverSeat]}"></span>${esc(actor.name)} · nights at the <b>${esc(hname(state.pending.hotel))}</b>` : `<span class="sw" style="background:${COLS[moverSeat]}"></span>${esc(actor.name)} rolls`);
+  if (isSpin) { proposalSeen = proposalKey(); hideProposal(); startSpinner(`${esc(actor.name)} · ${esc(hname(state.pending.hotel))}`); }
+  if (isStay || isSpin) pinLanded();
+  closeDeeds();
+  render();
+  if (isRoll || isStay) await wait(reduceMotion ? 0 : 700);
+  if (isSpin) await wait(reduceMotion ? 0 : 150);
+  let ev;
+  try { ev = E.apply(state, BOARD, a); } catch (err) { if (isRoll || isStay) hideDice(); if (isSpin) hideSpinner(); console.error(err); acting = false; render(); tick(); return; }
+  if (isRoll) { const mv = ev.find(e => e.type === 'move'); if (mv) settleDice(mv.roll, `<span class="sw" style="background:${COLS[moverSeat]}"></span>${esc(actor.name)} rolls <b>${mv.roll}</b>${mv.roll === 6 ? ' · extra turn' : ''}`); }
+  if (isStay) { const st = ev.find(e => e.type === 'stay'); if (st) settleStay(st); if (st) settleDice(st.nights, `${st.nights} night${st.nights > 1 ? 's' : ''} · <b>${fmt(st.amount)}</b> to ${esc(pname(st.to))}`); await wait(reduceMotion ? 0 : 2400); hideDice(); hideStay(); }
+  if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result); await wait(reduceMotion ? 300 : 1300); hideSpinner(); }
+  addStories(storiesFrom(ev, ctx));
+  saveGame();
+  const winEv = ev.find(e => e.type === 'win'); if (winEv) setTimeout(() => finale(winEv.player), 1200);
+  if (isRoll) {
+    await wait(reduceMotion ? 0 : 650);
+    $('dice').classList.add('aside'); // tuck the die away so the drive can be seen
+    await sync3D(moverSeat);
+    hideDice();
+    const mv = ev.find(e => e.type === 'move');
+    if (mv && actor.active) {
+      showLandedSpace(mv.to, actor);
+      // a lucky square, when it's actually some use: a little celebration
+      const t = BOARD.spaces[mv.to].type, nextActs = E.legalActions(state, BOARD);
+      if (t === 'freeEntrance' && nextActs.some(x => x.type === 'placeEntrance')) view.fireworks({ space: mv.to }, 1);
+      if (t === 'freeBuild' && nextActs.some(x => x.type === 'freeBuild')) view.fireworks({ space: mv.to }, 2);
+    }
+  } else await sync3D(undefined);
+  eventSounds(ev);
+  await animateTransfers(ev);
+  syncOwners(true);
+  acting = false;
+  render();
+  tick();
+}
+
+function tick() {
+  clearTimeout(botTimer);
+  if (!state || state.winner !== null) return;
+  const acts = E.legalActions(state, BOARD);
+  const main = acts.filter(a => !a.type.startsWith('claim'));
+  if (!main.length) return;
+  const actor = state.players[main[0].player];
+  if (!actor.ai) return; // a human is up — wait for a click
+  const humanClaim = acts.some(a => a.type.startsWith('claim') && !state.players[a.player].ai);
+  const delay = main[0].type === 'spin' ? (fast ? 2200 : 5200) : fast ? 250 : humanClaim ? 4200 : (main[0].type === 'roll' ? 1300 : 900);
+  botTimer = setTimeout(() => {
+    const botClaims = acts.filter(a => a.type.startsWith('claim') && state.players[a.player].ai);
+    const a = botClaims.length ? botClaims[0] : Bots.choose(actor.ai, state, BOARD, main, Math.random);
+    doAction(a);
+  }, delay);
+}
+
+// ---------------------------------------------------------------- rendering: the player mats
+function deedCard(h) {
+  const stars = [];
+  for (let i = 0; i < h.of; i++) stars.push(i < h.built ? 'on' : '');
+  stars.push(h.facilities ? 'on' : '');
+  return `<div class="deedCard ${h.facilities ? 'fac' : ''}" title="${esc(h.name)}"><div class="dTop" style="background:${SCENERY.landColours[h.id]}">${esc(h.name)}</div><div class="dBody"><div class="dStars">${stars.map(c => `<span class="${c}"></span>`).join('')}</div><div class="dRate">${h.built ? fmt(h.rate) : '—'}</div></div></div>`;
+}
+const BILL_DENOMS = [1000, 500, 100, 50];
+function billBreakdown(amount) {
+  let rem = Math.max(0, Math.round(amount / 50) * 50), out = [];
+  for (const d of BILL_DENOMS) { const n = Math.floor(rem / d); if (n > 0) { out.push([d, n]); rem -= n * d; } }
+  return out;
+}
+// A banknote: tinted paper with a guilloché pattern, a medallion, the value in two corners; several of a kind fan out as a stack.
+function noteHTML(d, n, extra) { return `<div class="bill d${d} ${n > 2 ? 's3' : n > 1 ? 's2' : ''} ${extra || ''}"><i class="crest">H</i><span class="v">${d}</span><b class="lbl">Hotel Bank</b>${n ? `<span class="n">×${n}</span>` : ''}</div>`; }
+function cashBills(amount) {
+  const notes = billBreakdown(amount);
+  if (!notes.length) return '<span class="noDeeds">Empty wallet</span>';
+  return notes.map(([d, n]) => noteHTML(d, n)).join('');
+}
+// the bar across the top: every player's balance, banknotes and property deeds, in seat order
+function renderMats(sum) {
+  const bar = $('scoreBar');
+  bar.innerHTML = sum.slice().sort((a, b) => a.seat - b.seat).map(p => `<div class="pseg ${p.id === state.current && state.winner === null ? 'now' : ''} ${p.active ? '' : 'out'}" id="pseg${p.seat}" style="--pc:${COLS[p.seat]}" role="button" tabindex="0" title="Show ${esc(p.name)}'s money and title deeds">
+    <div class="psL"><div class="psName"><span class="sw" style="background:${COLS[p.seat]}"></span>${esc(p.name)}${p.active ? '' : ' · out'}</div><div class="psCash">${fmt(p.cash)}</div><div class="psNotes">${cashBills(p.cash)}</div></div>
+    <div class="psDeeds">${p.hotels.length ? p.hotels.map(deedCard).join('') : '<span class="psNone">No properties yet</span>'}</div></div>`).join('');
+  bar.classList.remove('hidden');
+  document.documentElement.style.setProperty('--barH', bar.offsetHeight + 'px');
+}
+function render() {
+  if (!state) return;
+  const sum = E.summary(state, BOARD);
+  sum.forEach((p, i) => p.seat = state.players[i].seat);
+  $('players').innerHTML = sum.map(p => `<div class="pl ${p.id === state.current && state.winner === null ? 'now' : ''} ${p.active ? '' : 'out'}"><span class="dot" style="background:${COLS[p.seat]}"></span><div><div class="name">${esc(p.name)}${p.ai ? ' <span class="note">computer</span>' : ''}${p.active ? '' : ' — out'}</div><div class="hot">${p.pos < 0 ? 'In the car park' : ({ start: 'At the start', buy: 'On a buying space', build: 'On a planning space', freeEntrance: 'On a free entrance space', freeBuild: 'On a free build space' })[BOARD.spaces[p.pos].type] || ''}${p.hotels.length ? ' · ' + p.hotels.map(h => `<b>${esc(h.name)}</b> ${h.built}/${h.of}${h.facilities ? '+F' : ''}`).join(', ') : ''}</div></div><div class="cash">${fmt(p.cash)}</div></div>`).join('');
+  renderMats(sum);
+  renderActions();
+  // driver's view rides along with whoever's turn it is
+  if (view.isDriverView()) { const s = state.players[state.current].seat; if (driverSeat !== s) setDriver(true); }
+  updateSafeArea();
+}
+
+// On small screens the panel folds away; open it by itself whenever a player has something to decide, and fold it again after.
+let autoOpened = false;
+function showOptions(need) {
+  const p = $('gamePanel'), small = innerWidth <= 720;
+  if (need) {
+    if (small && p.classList.contains('min')) { p.classList.remove('min'); $('toggle').textContent = 'Hide'; $('toggle').setAttribute('aria-expanded', true); autoOpened = true; }
+    p.scrollTop = 0;
+  } else if (small && autoOpened && !p.classList.contains('min')) { p.classList.add('min'); $('toggle').textContent = 'Play'; $('toggle').setAttribute('aria-expanded', false); autoOpened = false; }
+}
+// a human decision moves the turn card from the side panel to the middle of the screen
+let decideKey = null;
+function placeDecision(on, placing) {
+  const card = $('turnCard'), box = $('decide'), body = $('gamePanel').querySelector('.body');
+  if (on) {
+    if (card.parentElement !== box) box.appendChild(card);
+    const key = state.turn + '|' + state.phase + '|' + state.current;
+    if (key !== decideKey) { decideKey = key; box.classList.remove('folded'); $('decideFold').textContent = 'Hide'; $('decideFold').setAttribute('aria-expanded', true); }
+    box.classList.toggle('low', !!placing);
+    // let the landed space be seen for a moment before the choice covers it
+    const lv = $('landed'), fresh = !lv.classList.contains('hidden') && !lv.classList.contains('pinned') ? Math.max(0, 1700 - (performance.now() - landedAt)) : 0;
+    clearTimeout(placeDecision.t);
+    const show = () => { placeDecision.pending = null; if (card.parentElement === box) { pinLanded(); if (box.classList.contains('hidden')) Sound.ui('attention'); box.classList.remove('hidden'); } };
+    if (fresh && box.classList.contains('hidden')) { placeDecision.pending = show; placeDecision.t = setTimeout(show, fresh); }
+    else show();
+  } else {
+    clearTimeout(placeDecision.t); placeDecision.pending = null;
+    if (card.parentElement !== body) body.insertBefore(card, body.firstChild);
+    box.classList.add('hidden'); box.classList.remove('low', 'folded');
+  }
+}
+$('decideFold').onclick = () => { const f = $('decide').classList.toggle('folded'); $('decideFold').textContent = f ? 'Show' : 'Hide'; $('decideFold').setAttribute('aria-expanded', !f); };
+// the hotel as it would stand after building up to stage `upto`: built parts pale, new parts in the hotel's colour
+function stageIcon(upto, built, stages, colour) {
+  const n = stages.length - 1, W = 76, gap = 2, bw = Math.min(16, (W - 8 - gap * (n - 1)) / n);
+  let x0 = (W - (bw * n + gap * (n - 1))) / 2, out = '';
+  for (let k = 0; k < n; k++) {
+    const name = stages[k][0], annexe = /annexe/i.test(name);
+    const h = annexe ? 14 : k === 0 ? 34 : 22 + Math.min(k, 3) * 4, y = 46 - h, x = x0 + k * (bw + gap);
+    const state = k < built ? 'old' : k <= upto ? 'new' : 'none';
+    if (state === 'none') { out += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="1.5" fill="none" stroke="rgba(255,255,255,.22)" stroke-dasharray="2 2"/>`; continue; }
+    const fill = state === 'old' ? '#9a958c' : colour;
+    out += `<rect x="${x}" y="${y}" width="${bw}" height="${h}" rx="1.5" fill="${fill}" stroke="rgba(0,0,0,.4)"/><rect x="${x - 1}" y="${y - 2}" width="${bw + 2}" height="2.5" fill="#e8e4dc"/>`;
+    for (let r = y + 4; r < 42; r += 6) for (let c = x + 2.5; c < x + bw - 3; c += 4.5) out += `<rect x="${c}" y="${r}" width="2.4" height="2.6" fill="${state === 'new' ? '#e3f1ff' : '#d6d2ca'}"/>`;
+  }
+  return `<svg viewBox="0 0 ${W} 48" aria-hidden="true"><rect x="2" y="45.5" width="${W - 4}" height="2.5" rx="1.2" fill="rgba(0,0,0,.35)"/>${out}</svg>`;
+}
+function buildPicker(declares, cash) {
+  const box = document.createElement('div'); box.className = 'buildPick';
+  const byHotel = {}; for (const a of declares) (byHotel[a.hotel] = byHotel[a.hotel] || []).push(a);
+  for (const [id, acts] of Object.entries(byHotel)) {
+    const h = BOARD.hotels[id], plot = state.plots[id], n = h.stages.length - 1, col = SCENERY.landColours[id];
+    const card = document.createElement('div'); card.className = 'bpHotel'; card.style.setProperty('--hc', col);
+    card.innerHTML = `<div class="bpHead"><b>${esc(h.name)}</b><span>${plot.built} of ${n} built · now ${fmt(E.nightlyRate(BOARD, state, id))}/night</span></div><div class="bpTiles"></div>`;
+    const tiles = card.querySelector('.bpTiles');
+    for (let j = 0; j < n; j++) {
+      const [name, cost, rate] = h.stages[j];
+      const t = document.createElement('button'); t.className = 'bpTile'; t.type = 'button';
+      if (j < plot.built) { t.classList.add('built'); t.disabled = true; t.innerHTML = `<span class="step">${j + 1}</span>${stageIcon(j, plot.built, h.stages, col)}<span class="nm">${esc(name)}</span><span class="co">Built</span><span class="rt">${fmt(rate)}/night</span>`; tiles.appendChild(t); continue; }
+      const a = acts.find(x => x.stages === j - plot.built + 1);
+      t.innerHTML = `<span class="step">${j + 1}</span>${stageIcon(j, plot.built, h.stages, col)}<span class="nm">${esc(name)}</span><span class="co">${a ? fmt(a.cost) : '—'}</span><span class="rt">→ ${fmt(rate)}/night</span>`;
+      if (!a) { t.classList.add('na'); t.disabled = true; }
+      else {
+        t.title = `Apply to build ${E.describeAction(a, state, BOARD).split(': ').slice(1).join(': ')}`;
+        t.setAttribute('aria-label', `${h.name}: build up to the ${name}, ${fmt(a.cost)} in total`);
+        const light = on => [...tiles.children].forEach((x, k) => x.classList.toggle('lit', on && k >= plot.built && k <= j));
+        t.onmouseenter = t.onfocus = () => light(true); t.onmouseleave = t.onblur = () => light(false);
+        t.onclick = () => doAction(a);
+        if (a.cost > cash) t.title += ' — more than you have in cash';
+      }
+      tiles.appendChild(t);
+    }
+    box.appendChild(card);
+  }
+  const hint = document.createElement('div'); hint.className = 'bpHint'; hint.innerHTML = 'Tap a tile to apply for everything up to it — the price is the total. A <b>×2</b> on the spinner doubles it; red refuses.'; box.appendChild(hint);
+  return box;
+}
+// Show the glowing spots for one hotel and frame them all; on a phone, fold the choice card down so the board is clear to tap
+let entranceOverviewKey = null, driverBeforeEntrances = false;
+function entranceOverview(spaceActions) {
+  const key = state.turn + '|' + state.phase + '|' + state.current;
+  if (key === entranceOverviewKey) return; entranceOverviewKey = key;
+  if (view.isDriverView()) { driverBeforeEntrances = true; setDriver(false); }
+  view.showEntranceChoices(spaceActions.map(x => ({ space: x.space, hotel: x.hotel })));
+  // on a phone, tuck the choice card down so the whole map of spots is clear (tap Show to pick by hotel instead)
+  const small = innerWidth <= 720;
+  setTimeout(() => { if (small && !$('decide').classList.contains('hidden')) { $('decide').classList.add('folded'); $('decideFold').textContent = 'Show'; $('decideFold').setAttribute('aria-expanded', false); } }, 1900);
+  setTimeout(() => { updateSafeArea(); view.flyTo({ fit: spaceActions.map(x => x.space) }); }, small ? 2400 : 60);
+}
+function endEntranceOverview() {
+  if (entranceOverviewKey === null) return; entranceOverviewKey = null;
+  if (driverBeforeEntrances) { driverBeforeEntrances = false; setDriver(true); }
+}
+function focusSpots(opts, id) {
+  if (view.isDriverView()) { driverBeforeEntrances = true; setDriver(false); }
+  view.showEntranceChoices(opts.map(x => ({ space: x.space, hotel: x.hotel })));
+  if (innerWidth <= 720 && !$('decide').classList.contains('hidden')) { $('decide').classList.add('folded'); $('decideFold').textContent = 'Show'; $('decideFold').setAttribute('aria-expanded', false); }
+  setTimeout(() => { updateSafeArea(); view.flyTo({ fit: opts.map(x => x.space), hotel: id }); }, innerWidth <= 720 ? 480 : 0);
+}
+// Town Hall: a tile per hotel you own — pick one, then tap its glowing spot; bought ones tick off
+function entranceIcon(colour, done) { return `<svg viewBox="0 0 56 34" aria-hidden="true"><rect x="4" y="30" width="48" height="3" rx="1.5" fill="rgba(0,0,0,.35)"/><path d="M14 30V12l14-8 14 8v18" fill="${colour}" stroke="rgba(0,0,0,.4)"/><rect x="23" y="17" width="10" height="13" rx="5" fill="${done ? '#8fe0a0' : '#1b1712'}"/><rect x="6" y="28" width="44" height="2.5" fill="#e8e4dc"/></svg>`; }
+function entrancePicker(actor, spaceActions) {
+  const box = document.createElement('div');
+  const grid = document.createElement('div'); grid.className = 'thPick'; box.appendChild(grid);
+  const bought = (state.pending && state.pending.bought) || {};
+  for (const id of HOTELS.filter(h => state.plots[h].owner === actor.id).sort((a, b) => BOARD.hotels[a].land - BOARD.hotels[b].land)) {
+    const h = BOARD.hotels[id], plot = state.plots[id], col = SCENERY.landColours[id], mine = spaceActions.filter(a => a.hotel === id);
+    const t = document.createElement('button'); t.type = 'button'; t.className = 'thTile'; t.style.setProperty('--hc', col); t.dataset.ent = id;
+    let st, cls;
+    if (bought[id]) { cls = 'done'; st = '✓ Entrance bought'; }
+    else if (mine.length) { cls = 'ok'; st = 'Choose a spot'; }
+    else if (plot.built === 0) { cls = 'no'; st = 'Build the main building first'; }
+    else if (E.freeSpaces(BOARD, state, id).length === 0) { cls = 'no'; st = 'Every spot is taken'; }
+    else { cls = 'no'; st = 'Not enough cash'; }
+    t.classList.add(cls);
+    t.innerHTML = `<div class="th">${esc(h.name)}</div>${entranceIcon(col, cls === 'done')}<div class="co">${fmt(h.entrance)}</div><div class="st">${st}</div>`;
+    if (cls === 'ok') t.onclick = () => { grid.querySelectorAll('.sel').forEach(x => x.classList.remove('sel')); t.classList.add('sel'); focusSpots(mine, id); };
+    else t.disabled = true;
+    grid.appendChild(t);
+  }
+  const n = document.createElement('div'); n.className = 'thNote'; n.textContent = 'One entrance for each hotel with a main building, every time you pass the Town Hall. Tap a hotel, then its glowing spot on the board.'; box.appendChild(n);
+  return box;
+}
+// why a hotel you own can't have an entrance right now
+function entranceBlockers(pid, offered) {
+  const p = state.players[pid], out = [];
+  for (const id of HOTELS) {
+    const plot = state.plots[id]; if (plot.owner !== pid || offered.has(id) || (state.pending && state.pending.bought && state.pending.bought[id])) continue;
+    const why = plot.built === 0 ? 'needs its main building first' : E.freeSpaces(BOARD, state, id).length === 0 ? 'every entrance spot is taken' : p.cash < BOARD.hotels[id].entrance ? `costs ${fmt(BOARD.hotels[id].entrance)}, more than your cash` : null;
+    if (why) out.push(`<b>${esc(hname(id))}</b> ${why}`);
+  }
+  return out;
+}
+// ---------------------------------------------------------------- picture options for every kind of choice
+const ICON = {
+  land: c => `<svg viewBox="0 0 56 34" aria-hidden="true"><path d="M4 30l10-10h38l-10 10z" fill="${c}" stroke="rgba(0,0,0,.35)"/><path d="M33 22V6" stroke="#ddd" stroke-width="1.8"/><rect x="33" y="5" width="18" height="10" rx="1" fill="#fff" stroke="#c8322b"/><text x="42" y="12.4" font-size="5.4" font-weight="700" text-anchor="middle" fill="#c8322b" font-family="Barlow Condensed,sans-serif">FOR SALE</text></svg>`,
+  force: (c, oc) => `<svg viewBox="0 0 56 34" aria-hidden="true"><path d="M4 30l10-10h38l-10 10z" fill="${c}" stroke="rgba(0,0,0,.35)"/><path d="M33 22V6" stroke="#ddd" stroke-width="1.8"/><rect x="33" y="5" width="18" height="10" rx="1" fill="${oc}" stroke="#1b1712"/><text x="42" y="12.4" font-size="5.6" font-weight="700" text-anchor="middle" fill="#fff" font-family="Barlow Condensed,sans-serif">SOLD?</text><path d="M10 10l6 4-6 4M16 14H4" stroke="#f2c417" stroke-width="2" fill="none"/></svg>`,
+  pool: () => `<svg viewBox="0 0 56 34" aria-hidden="true"><rect x="6" y="16" width="44" height="14" rx="3" fill="#2f9bd6"/><path d="M9 22q4-3 8 0t8 0t8 0t8 0t8 0" stroke="#bfe7ff" stroke-width="1.6" fill="none"/><path d="M40 16V5h6v3" stroke="#ddd" stroke-width="1.6" fill="none"/><circle cx="14" cy="8" r="4" fill="#f2c417"/></svg>`,
+  gavel: c => `<svg viewBox="0 0 56 34" aria-hidden="true"><rect x="8" y="27" width="22" height="4" rx="1" fill="#6b4a32"/><g transform="rotate(-35 34 14)"><rect x="24" y="8" width="20" height="9" rx="2" fill="#8a5a3a"/><rect x="32" y="16" width="4" height="18" rx="1.5" fill="#6b4a32"/></g><rect x="38" y="24" width="12" height="7" rx="1" fill="${c}" stroke="rgba(0,0,0,.35)"/></svg>`,
+  info: () => `<svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="rgba(242,196,23,.16)" stroke="#f2c417" stroke-width="2"/><rect x="18" y="17" width="4" height="13" rx="2" fill="#f2c417"/><circle cx="20" cy="11.5" r="2.6" fill="#f2c417"/></svg>`,
+};
+function optTile({ id, icon, price, status, cls, onClick, owner }) {
+  const h = BOARD.hotels[id], t = document.createElement('button');
+  t.type = 'button'; t.className = 'thTile ' + cls; t.style.setProperty('--hc', SCENERY.landColours[id]); t.dataset.ent = id;
+  t.innerHTML = `<div class="th">${esc(h.name)}</div>${icon}${owner ? `<div class="own" style="--oc:${COLS[owner.seat]}">${esc(owner.name)}</div>` : ''}<div class="co">${price}</div><div class="st">${status}</div>`;
+  if (onClick && cls !== 'no' && cls !== 'done') t.onclick = () => onClick(t); else t.disabled = true;
+  return t;
+}
+function noOptions(title, text, items) {
+  const d = document.createElement('div'); d.className = 'noOpt';
+  d.innerHTML = `${ICON.info()}<div><h4>${esc(title)}</h4><p>${text}</p>${items && items.length ? `<ul>${items.map(([id, why]) => `<li style="--hc:${SCENERY.landColours[id]}"><i></i><span><b>${esc(hname(id))}</b> — ${why}</span></li>`).join('')}</ul>` : ''}</div>`;
+  return d;
+}
+function actionRow(list) {
+  const row = document.createElement('div'); row.className = 'optRow';
+  for (const [label, fn, cls] of list) { const b = document.createElement('button'); b.textContent = label; if (cls) b.className = cls; b.onclick = fn; row.appendChild(b); }
+  return row;
+}
+const ownedBy = pid => HOTELS.filter(id => state.plots[id].owner === pid).sort((a, b) => BOARD.hotels[a].land - BOARD.hotels[b].land);
+function whyChips(items) { const d = document.createElement('div'); d.className = 'whyList'; d.innerHTML = items.map(([id, why]) => `<span style="--hc:${SCENERY.landColours[id]}"><b>${esc(hname(id))}</b> ${why}</span>`).join(''); return d; }
+// Returns true when this phase's options were drawn as pictures.
+function renderChoices(actor, main, spaceActions, btns) {
+  const ph = state.phase, wrap = document.createElement('div'); wrap.className = 'optWrap';
+  const pass = main.find(a => a.type === 'pass'), grid = () => { const g = document.createElement('div'); g.className = 'thPick'; wrap.appendChild(g); return g; };
+  const add = el => (wrap.appendChild(el), el);
+  if (ph === 'buy') {
+    const sp = BOARD.spaces[actor.pos], g = grid(), sides = [sp.inner, sp.outer].filter(Boolean);
+    let any = false; const why = [];
+    for (const id of sides) {
+      const h = BOARD.hotels[id], plot = state.plots[id], a = main.find(x => x.type === 'buyLand' && x.hotel === id), owner = plot.owner === null ? null : state.players[plot.owner];
+      let st, cls = 'no', icon = ICON.land(SCENERY.landColours[id]), price = fmt(h.land);
+      if (a && !a.compulsory) { cls = 'ok'; st = 'Buy the land'; }
+      else if (a) { cls = 'ok'; st = `Force ${esc(owner.name)} to sell`; icon = ICON.force(SCENERY.landColours[id], COLS[owner.seat]); price = fmt(a.cost); }
+      else if (plot.owner === actor.id) { st = 'Already yours'; why.push([id, 'is already yours']); }
+      else if (owner && plot.built > 0) { st = `${esc(owner.name)} has built here — it can't be forced`; icon = ICON.force(SCENERY.landColours[id], COLS[owner.seat]); price = fmt(h.compulsory); why.push([id, `belongs to ${esc(owner.name)}, who has already built on it, so it can't be force-bought`]); }
+      else { const need = owner ? h.compulsory : h.land; st = `Needs ${fmt(need)} — you have ${fmt(actor.cash)}`; if (owner) price = fmt(h.compulsory); why.push([id, `costs ${fmt(need)}, more than your ${fmt(actor.cash)}`]); }
+      if (cls === 'ok') any = true;
+      g.appendChild(optTile({ id, icon, price, status: st, cls, owner: plot.owner !== null && plot.owner !== actor.id ? owner : null, onClick: () => doAction(a) }));
+    }
+    if (!any) { wrap.removeChild(g); add(noOptions('Nothing to buy here', 'This buying space borders:', why)); }
+    add(actionRow([[any ? "Don't buy" : 'Carry on', () => doAction(pass), any ? 'quiet' : 'go']]));
+  } else if (ph === 'build') {
+    const declares = main.filter(a => a.type === 'declare'), mine = ownedBy(actor.id), why = [];
+    for (const id of mine) if (!declares.some(a => a.hotel === id)) {
+      const plot = state.plots[id];
+      why.push([id, plot.boughtTurn === state.turn ? 'land bought this turn — you can build on it next time' : plot.built >= BOARD.hotels[id].stages.length - 1 ? 'every building is up (leisure facilities are bought at the end of a turn)' : 'nothing to build']);
+    }
+    if (declares.length) { add(buildPicker(declares, actor.cash)); if (why.length) add(whyChips(why)); }
+    else add(noOptions('Nothing to build', mine.length ? 'You can apply for planning permission on a hotel you own, but:' : "You don't own any hotel land yet. Land is bought on the BUY spaces.", why));
+    add(actionRow([[declares.length ? "Don't build this time" : 'Carry on', () => doAction(pass), declares.length ? 'quiet' : 'go']]));
+  } else if (ph === 'townHall') {
+    const anyOk = spaceActions.length > 0, done = main.find(a => a.type === 'done');
+    add(entrancePicker(actor, spaceActions));
+    add(actionRow([[anyOk ? 'Done with entrances — carry on' : 'Carry on', () => doAction(done), anyOk ? 'quiet' : 'go']]));
+  } else if (ph === 'freeEntrance') {
+    const mine = ownedBy(actor.id), g = grid(), why = []; let any = false;
+    for (const id of mine) {
+      const opts = spaceActions.filter(a => a.hotel === id), plot = state.plots[id];
+      let cls = 'no', st;
+      if (opts.length) { cls = 'ok free'; st = 'Choose a spot'; any = true; }
+      else if (plot.built === 0) { st = 'Build the main building first'; why.push([id, 'needs its main building before it can have an entrance']); }
+      else { st = 'Every spot is taken'; why.push([id, 'has no free entrance spots left']); }
+      g.appendChild(optTile({ id, icon: entranceIcon(SCENERY.landColours[id], false), price: 'FREE', status: st, cls, onClick: t => { g.querySelectorAll('.sel').forEach(x => x.classList.remove('sel')); t.classList.add('sel'); focusSpots(opts, id); } }));
+    }
+    if (!any) { wrap.removeChild(g); add(noOptions('No free entrance possible', mine.length ? 'A free entrance needs a hotel with its main building and a spare spot:' : "You don't own any hotels yet, so there's nothing to put an entrance on.", why)); }
+    else add(Object.assign(document.createElement('div'), { className: 'thNote', textContent: 'Tap a hotel, then its glowing spot on the board.' }));
+    add(actionRow([[any ? 'No thanks' : 'Carry on', () => doAction(pass), any ? 'quiet' : 'go']]));
+  } else if (ph === 'freeBuild') {
+    const mine = ownedBy(actor.id), g = grid(), why = []; let any = false;
+    for (const id of mine) {
+      const a = main.find(x => x.type === 'freeBuild' && x.hotel === id), h = BOARD.hotels[id], plot = state.plots[id];
+      if (!a) { why.push([id, 'is complete, facilities and all']); g.appendChild(optTile({ id, icon: stageIcon(h.stages.length - 2, plot.built, h.stages, SCENERY.landColours[id]), price: '—', status: 'Complete', cls: 'no' })); continue; }
+      any = true;
+      const what = a.facilities ? 'Leisure facilities' : h.stages[plot.built][0], worth = a.facilities ? h.stages[h.stages.length - 1][1] : h.stages[plot.built][1];
+      g.appendChild(optTile({ id, icon: a.facilities ? ICON.pool() : stageIcon(plot.built, plot.built, h.stages, SCENERY.landColours[id]), price: `FREE <s style="opacity:.5;font-size:.75em">${fmt(worth)}</s>`, status: esc(what), cls: 'ok free', onClick: () => doAction(a) }));
+    }
+    if (!any) { wrap.removeChild(g); add(noOptions('Nothing to build free', mine.length ? 'Every hotel you own is already complete:' : "You don't own any hotel land yet, so there's nothing to build on.", why)); }
+    add(actionRow([[any ? 'No thanks' : 'Carry on', () => doAction(pass), any ? 'quiet' : 'go']]));
+  } else if (ph === 'end') {
+    const facs = main.filter(a => a.type === 'buyFacilities'), end = main.find(a => a.type === 'endTurn');
+    // every completed hotel without its leisure facilities: buy now, or see what's missing
+    const ready = ownedBy(actor.id).filter(id => state.plots[id].built === BOARD.hotels[id].stages.length - 1 && !state.plots[id].facilities);
+    if (ready.length) {
+      const g = grid();
+      for (const id of ready) {
+        const h = BOARD.hotels[id], a = facs.find(x => x.hotel === id), cost = h.stages[h.stages.length - 1][1];
+        g.appendChild(optTile({ id, icon: ICON.pool(), price: fmt(cost), status: a ? `Leisure facilities → ${fmt(h.stages[h.stages.length - 1][2])}/night` : `Needs ${fmt(cost)} — you have ${fmt(actor.cash)}`, cls: a ? 'ok' : 'no', onClick: a ? () => doAction(a) : null }));
+      }
+      if (!facs.length) add(Object.assign(document.createElement('div'), { className: 'thNote', textContent: 'Leisure facilities can be bought at the end of any of your turns once a hotel is complete — no planning permission needed.' }));
+    }
+    add(actionRow([['End turn', () => doAction(end), 'go']]));
+  } else if (ph === 'raise') {
+    add(noOptions(`${actor.name} owes ${fmt(state.debt ? state.debt.amount : 0)}`, 'Not enough cash to pay. Choose a hotel to sell at auction. Bids start at the reserve — half of what has been spent on it — and if nobody bids, the Bank buys it at the reserve and knocks it down.'));
+    const g = grid();
+    for (const a of main.filter(x => x.type === 'auctionLot')) g.appendChild(optTile({ id: a.hotel, icon: ICON.gavel(SCENERY.landColours[a.hotel]), price: `Reserve ${fmt(E.auctionReserve(state, BOARD, a.hotel))}`, status: esc(E.describeAction(a, state, BOARD).replace(/^Auction the [^(]*\(|\)$/g, '')), cls: 'ok', onClick: () => doAction(a) }));
+  } else if (ph === 'auction') {
+    const au = state.auction, id = au.lot, bid = main.find(a => a.type === 'bid'), hi = au.highBidder !== null ? state.players[au.highBidder] : null;
+    const box = document.createElement('div'); box.className = 'bidPanel';
+    box.innerHTML = `<div class="bidLot" style="--hc:${SCENERY.landColours[id]}">${ICON.gavel(SCENERY.landColours[id])}<div><div class="nm">${esc(hname(id))}</div><div class="sub">${fmt(E.amountSpent(state, BOARD, id))} spent on it so far</div></div><div class="hi"><small>${hi ? 'Highest · ' + esc(hi.name) : 'Reserve price'}</small>${fmt(hi ? au.high : (au.reserve || 0))}</div></div>`;
+    if (!hi) { const n = document.createElement('div'); n.className = 'thNote'; n.textContent = `If nobody bids, the Bank buys the ${hname(id)} for ${fmt(au.reserve || 0)}, knocks down every building and entrance, and the land goes back on sale.`; box.appendChild(n); }
+    if (bid) {
+      const chips = document.createElement('div'); chips.className = 'bidChips';
+      const amounts = [...new Set([bid.min, bid.min + 100, bid.min + 500, bid.min + 1000].filter(v => v <= bid.max))];
+      for (const v of amounts) { const b = document.createElement('button'); b.textContent = fmt(v); b.onclick = () => doAction({ type: 'bid', player: bid.player, amount: v }); chips.appendChild(b); }
+      box.appendChild(chips);
+      const cu = document.createElement('div'); cu.className = 'bidCustom';
+      cu.innerHTML = `<input type="number" step="50" min="${bid.min}" max="${bid.max}" value="${bid.min}" aria-label="Your bid"><button>Bid</button>`;
+      cu.querySelector('button').onclick = () => doAction({ type: 'bid', player: bid.player, amount: +cu.querySelector('input').value });
+      box.appendChild(cu);
+    } else box.appendChild(noOptions(hi ? "You can't outbid" : "You can't meet the reserve", hi ? `The bid is ${fmt(au.high)} and you have ${fmt(actor.cash)}.` : `Bids start at ${fmt(au.reserve || 0)} and you have ${fmt(actor.cash)}.`));
+    add(box);
+    add(actionRow([[bid ? 'Pass' : 'Carry on', () => doAction(pass), bid ? 'quiet' : 'go']]));
+  } else return false;
+  btns.appendChild(wrap);
+  return true;
+}
+function renderActions() {
+  const btns = $('btns'), claims = $('claims'), bidRow = $('bidRow'), hint = $('entranceHint');
+  btns.innerHTML = ''; claims.innerHTML = ''; claims.classList.add('hidden'); bidRow.classList.add('hidden'); hint.classList.add('hidden');
+  const cur = state.players[state.current];
+  $('deedsBtn').classList.toggle('hidden', !(state.winner === null && !cur.ai && cur.active));
+  if (state.winner !== null) {
+    const w = state.players[state.winner];
+    $('who').innerHTML = `<span class="sw" style="background:${COLS[w.seat]}"></span><div>${esc(w.name)} wins!<small>Start a new game from Table options.</small></div>`;
+    view.clearEntranceChoices(); withdrawDie(); withdrawSpinner(); placeDecision(false);
+    return;
+  }
+  const acts = E.legalActions(state, BOARD);
+  const main = acts.filter(a => !a.type.startsWith('claim'));
+  if (!main.length) { view.clearEntranceChoices(); placeDecision(false); return; }
+  const actor = state.players[main[0].player];
+  const phaseText = { roll: 'to roll', stay: 'is a guest', townHall: 'may buy entrances', buy: 'is on a buying space', build: 'is on a planning permission space', spin: 'spins for permission', freeEntrance: 'is on the free entrance space', freeBuild: 'is on build one phase free', end: 'may buy leisure facilities, or end the turn', raise: 'must sell something to pay a debt', auction: 'to bid' }[state.phase] || state.phase;
+  $('who').innerHTML = `<span class="sw" style="background:${COLS[actor.seat]}"></span><div>${esc(actor.name)}<small>${phaseText}${state.phase === 'auction' ? (state.auction.highBidder !== null ? ' · highest bid ' + fmt(state.auction.high) + ' by ' + esc(state.players[state.auction.highBidder].name) : ' · reserve ' + fmt(state.auction.reserve || 0)) : ''}</small></div>`;
+  const human = !acting && !actor.ai;
+  if (state.phase === 'stay' && state.pending && state.pending.hotel) showStay(); else if (!acting) hideStay();
+  // the die and the spinner are the controls for rolling and spinning
+  const rollA = main.find(a => a.type === 'roll' || a.type === 'rollStay'), spinA = main.find(a => a.type === 'spin');
+  if (human && rollA && rollA.type === 'rollStay') pinLanded();
+  if (human && rollA) offerDie(rollA, rollA.type === 'roll' ? `<span class="sw" style="background:${COLS[actor.seat]}"></span>${esc(actor.name)} · <b>tap the die to roll</b>` : `<span class="sw" style="background:${COLS[actor.seat]}"></span>Staying at the <b>${esc(hname(rollA.hotel))}</b> · tap to roll for nights`);
+  else if (!acting) withdrawDie();
+  // planning: everyone sees the application first, then the spinner comes up
+  const needProposal = spinA && !acting && proposalSeen !== proposalKey();
+  if (needProposal) {
+    if ($('proposal').classList.contains('hidden') || $('proposal').dataset.key !== proposalKey()) { pinLanded(); showProposal(human); $('proposal').dataset.key = proposalKey(); view.flyTo(state.pending.hotel); }
+    withdrawSpinner();
+  } else if (!spinA && !acting) hideProposal();
+  if (human && spinA && !needProposal) { pinLanded(); offerSpinner(spinA, `<b>Tap the spinner</b> · ${esc(actor.name)} applies to build at the ${esc(hname(state.pending.hotel))}`); }
+  else if (!acting) withdrawSpinner();
+  const spaceActions = main.filter(a => a.type === 'placeEntrance' || a.type === 'buyEntrance');
+  if (human && spaceActions.length) {
+    view.showEntranceChoices(spaceActions.map(a => ({ space: a.space, hotel: a.hotel })));
+    view.onPickSpace((space, hotel) => { const a = spaceActions.find(x => x.space === space && x.hotel === hotel); if (a) doAction(a); });
+    hint.classList.remove('hidden');
+  } else view.clearEntranceChoices();
+  if (acting) { const b = document.createElement('div'); b.className = 'thinking'; b.textContent = '…'; btns.appendChild(b); }
+  else if (!actor.ai) {
+    const drawn = renderChoices(actor, main, spaceActions, btns);
+    for (const a of (drawn ? main.filter(a => ['roll', 'rollStay', 'spin'].includes(a.type)) : main).filter(a => a.type !== 'withdraw')) {
+      if (a.type === 'declare') continue;
+      if (a.type === 'roll' || a.type === 'rollStay' || a.type === 'spin') { const b = document.createElement('div'); b.className = 'note'; b.textContent = a.type === 'spin' ? (proposalSeen !== proposalKey() ? 'Read the planning application, then submit it to the committee.' : 'Tap the spinner in the middle of the board.') : 'Tap the die in the middle of the board.'; btns.appendChild(b); continue; }
+      if (a.type === 'bid') { bidRow.classList.remove('hidden'); $('bidAmt').min = a.min; $('bidAmt').max = a.max; $('bidAmt').step = 50; $('bidAmt').value = a.min; $('bidHint').textContent = `between ${fmt(a.min)} and ${fmt(a.max)}`; $('bidBtn').onclick = () => doAction({ type: 'bid', player: a.player, amount: +$('bidAmt').value }); continue; }
+      if (a.type === 'buyEntrance') continue; // shown as hotel tiles above
+      if (a.type === 'placeEntrance') {
+        // one button per hotel: it takes the camera there; the player then taps the glowing spot they want
+        if (btns.querySelector(`[data-ent="${a.hotel}"]`)) continue;
+        const b = document.createElement('button'); b.dataset.ent = a.hotel;
+        b.textContent = `${E.describeAction(a, state, BOARD)} — choose the spot`;
+        b.onclick = () => { const mine = spaceActions.filter(x => x.hotel === a.hotel); view.showEntranceChoices(mine.map(x => ({ space: x.space, hotel: x.hotel }))); view.flyTo(a.hotel); };
+        btns.appendChild(b); continue;
+      }
+      const b = document.createElement('button');
+      b.textContent = E.describeAction(a, state, BOARD);
+      if (['endTurn', 'done'].includes(a.type)) b.classList.add('quiet');
+      if (a.type === 'pass') b.classList.add('quiet');
+      b.onclick = () => doAction(a);
+      btns.appendChild(b);
+    }
+  } else { const b = document.createElement('div'); b.className = 'thinking'; b.textContent = 'Thinking…'; btns.appendChild(b); }
+  // a human with a real decision (not just the die or spinner): open the options and make them stand out
+  const decision = human && main.some(a => !['roll', 'rollStay', 'spin', 'withdraw'].includes(a.type));
+  $('turnCard').classList.toggle('attention', decision);
+  $('yourMove').textContent = `${actor.name} — your move`;
+  placeDecision(decision, human && spaceActions.length > 0);
+  $('decide').classList.toggle('wide', human && (main.some(a => a.type === 'declare') || ['townHall', 'buy', 'freeEntrance', 'freeBuild', 'raise'].includes(state.phase) && main.length > 2));
+  if (human && ['townHall', 'freeEntrance'].includes(state.phase)) hint.classList.add('hidden');
+  if (human && spaceActions.length && ['townHall', 'freeEntrance'].includes(state.phase)) entranceOverview(spaceActions);
+  else if (!acting && !['townHall', 'freeEntrance'].includes(state.phase)) endEntranceOverview();
+  if (false) {
+    const why = entranceBlockers(actor.id, new Set(spaceActions.map(a => a.hotel)));
+    if (why.length) { const d = document.createElement('div'); d.className = 'thWhy'; d.innerHTML = 'One entrance per hotel each time you pass. Not available now: ' + why.join('; ') + '.'; btns.appendChild(d); }
+  }
+  const cl = acts.filter(a => a.type.startsWith('claim'));
+  if (cl.length) {
+    claims.classList.remove('hidden');
+    claims.innerHTML = `<div class="k">Unclaimed — lost when the next player rolls</div>`;
+    for (const a of cl) { const b = document.createElement('button'); b.textContent = `${state.players[a.player].name}: ${E.describeAction(a, state, BOARD)}`; if (state.players[a.player].ai || acting) b.disabled = true; b.onclick = () => doAction(a); claims.appendChild(b); }
+  }
+}
+
+// ---------------------------------------------------------------- title deeds: any deed not held by another player, on your own turn
+function deedViewer() { if (!state || state.winner !== null) return null; const p = state.players[state.current]; return p && !p.ai && p.active ? p : null; }
+function titleDeed(id, viewer) {
+  const h = BOARD.hotels[id], plot = state.plots[id], c = SCENERY.landColours[id], n = h.stages.length - 1;
+  const ents = Object.values(state.entrances).filter(x => x === id).length;
+  const rows = h.stages.map(([name, cost, rate], k) => { const built = k < n ? k < plot.built : plot.facilities; return `<tr class="${built ? 'built' : ''}"><td>${esc(k === n ? 'Leisure facilities' : name)}</td><td class="num">${fmt(cost)}</td><td class="num">${fmt(rate)}</td></tr>`; }).join('');
+  const mine = viewer && plot.owner === viewer.id;
+  const holder = plot.owner === null ? null : state.players[plot.owner];
+  const status = plot.owner === null ? 'For sale from the Bank' : `${mine ? 'Yours' : 'Owned by ' + holder.name} · ${plot.built} of ${n} buildings${plot.facilities ? ' + facilities' : ''} · ${ents} entrance${ents === 1 ? '' : 's'}`;
+  return `<article class="titleDeed" data-id="${id}" style="--c:${c}">
+    <div class="tdHead"><div class="tdKick">Title deed</div><div class="tdName">${esc(h.name)}</div></div>
+    ${mine ? '<div class="tdStamp">Yours</div>' : ''}
+    ${holder ? `<div class="tdOwner" style="background:${COLS[holder.seat]}">${mine ? 'Yours' : 'Owned by ' + esc(holder.name)}</div>` : `<div class="tdOwner" style="background:#8a8378">For sale · with the Bank</div>`}
+    <div class="tdBody">
+      <div class="tdRow"><span>Land</span><b>${fmt(h.land)}</b></div>
+      <div class="tdRow"><span>Forced purchase (land only)</span><b>${fmt(h.compulsory)}</b></div>
+      <div class="tdRow"><span>Each entrance</span><b>${fmt(h.entrance)}</b></div>
+      <table class="tdTable"><thead><tr><th>Building</th><th class="num">Cost</th><th class="num">Per night</th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="tdNote">${esc(status)}. Guests roll the die for nights and pay nights × the rate for what is built.</div>
+    </div></article>`;
+}
+function openDeeds(focusId) {
+  Sound.ui('open');
+  const viewer = deedViewer(); if (!viewer) return;
+  const order = HOTELS.slice().sort((a, b) => BOARD.hotels[a].land - BOARD.hotels[b].land);
+  $('deedsTitle').textContent = 'Title deeds';
+  $('deedsSub').textContent = `${viewer.name}'s turn · every hotel's deed — the coloured band shows who owns it.`;
+  $('deedGrid').innerHTML = order.map(id => {
+    return titleDeed(id, viewer);
+  }).join('');
+  $('deeds').classList.remove('hidden');
+  if (focusId) { const el = $('deedGrid').querySelector(`[data-id="${focusId}"]`); if (el) { el.classList.add('focus'); el.scrollIntoView({ block: 'nearest' }); } }
+  $('deedsClose').focus();
+}
+// tap a player in the top bar: their money and their title deeds, full size
+function openHoldings(seat) {
+  Sound.ui('open');
+  if (!state) return;
+  const idx = state.players.findIndex(p => p.seat === seat); if (idx < 0) return;
+  const p = state.players[idx], viewer = deedViewer();
+  const own = HOTELS.filter(id => state.plots[id].owner === idx).sort((a, b) => BOARD.hotels[a].land - BOARD.hotels[b].land);
+  const built = own.reduce((n, id) => n + state.plots[id].built, 0), ents = Object.values(state.entrances).filter(id => own.includes(id)).length;
+  $('deedsTitle').textContent = `${p.name}${p.ai && !/computer/i.test(p.name) ? ' (computer)' : ''}`;
+  $('deedsSub').textContent = p.active ? `${own.length} propert${own.length === 1 ? 'y' : 'ies'} · ${built} building${built === 1 ? '' : 's'} · ${ents} entrance${ents === 1 ? '' : 's'}` : 'Out of the game';
+  const notes = billBreakdown(p.cash);
+  $('deedGrid').innerHTML = `<div class="holdTop" style="--pc:${COLS[p.seat]}"><div class="holdCash"><small>Cash</small>${fmt(p.cash)}</div><div class="holdNotes">${notes.length ? notes.map(([d, n]) => noteHTML(d, n)).join('') : '<span class="noDeeds">Empty wallet</span>'}</div></div>`
+    + (own.length ? own.map(id => titleDeed(id, viewer && viewer.id === idx ? viewer : null)).join('') : '<div class="holdEmpty">No title deeds yet.</div>');
+  $('deeds').classList.remove('hidden');
+  $('deedsClose').focus();
+}
+$('scoreBar').addEventListener('click', e => { const seg = e.target.closest('.pseg'); if (seg) openHoldings(+seg.id.replace('pseg', '')); });
+$('scoreBar').addEventListener('keydown', e => { if (e.key !== 'Enter' && e.key !== ' ') return; const seg = e.target.closest('.pseg'); if (seg) { e.preventDefault(); openHoldings(+seg.id.replace('pseg', '')); } });
+// ---------------------------------------------------------------- the rules, as played in this game
+const RULES = {
+  aim: `<h4>The aim</h4><p>You are hotel developers. Buy land, win planning permission, build the grandest hotels you can and fit them with entrances so that rival players have to stay — and pay.</p>
+    <p>Everyone starts with <b>12,000</b>. Players drop out when they can't pay their bills; the <b>last tycoon standing wins</b>.</p>
+    <h4>The hotels</h4><p>Eight hotels from the little <b>Boomerang</b> to the grand <b>President</b>. Each title deed lists the land price, the cost of every building, the price of each entrance and the nightly rate guests pay as the hotel grows. Tap <b>View title deeds</b> any time on your turn to see them.</p>`,
+  turn: `<h4>On your turn</h4><ul>
+    <li><b>Tap the die</b> to roll and drive that many spaces. If someone is already on the space you reach, you move on to the next free one.</li>
+    <li>Roll a <b>6</b> and you get another turn afterwards.</li>
+    <li>Passing the <b>Bank</b> pays you <b>2,000</b> (once only two players are left, the Bank stops paying).</li>
+    <li>Passing the <b>Town Hall</b> lets you buy entrances — see <i>Entrances &amp; stays</i>.</li>
+    <li>Then you act on the space you landed on, and finish by buying any leisure facilities you want before ending your turn.</li></ul>
+    <h4>Claim it or lose it (optional)</h4><p>If this was ticked at the start, Bank money, stay payments and Town Hall entrances aren't automatic: they must be claimed before the next player rolls, or they're lost.</p>`,
+  spaces: `<h4>The spaces</h4><div class="rSpace">
+    <span class="tag" style="background:#2f9b45">Buy</span><span>Buy the land on either side of the road from the Bank at the deed's price. If a rival owns it but <b>hasn't built yet</b>, you can force them to sell it to you for the <b>compulsory purchase</b> price.</span>
+    <span class="tag" style="background:#e08a1e">Planning</span><span>Apply for planning permission to build on one of your hotels — see <i>Building</i>.</span>
+    <span class="tag" style="background:#2f79c9">Free entrance</span><span>Place one entrance free of charge on any of your hotels that has its main building.</span>
+    <span class="tag" style="background:#8a44c4">Build one free</span><span>Add the next building — or the leisure facilities — to one of your hotels, free.</span>
+    <span class="tag" style="background:#555">Start</span><span>The car park. Nothing happens here.</span></div>
+    <p>Landing on a space with a <b>rival's entrance</b> means a stay at their hotel — see <i>Entrances &amp; stays</i>.</p>`,
+  build: `<h4>Planning permission</h4><p>On a planning space choose one of your hotels and how far to build — the main building first, then the extensions and annexe in order. You can apply for several at once. Land bought this turn can't be built on until a later turn.</p>
+    <p>Before the spinner, you'll see the application and can <b>cancel</b> it. Then the committee decides:</p>
+    <div class="rSpin"><span style="background:#3fa34d">GREEN · granted, pay the cost (3 in 6)</span><span style="background:#2f79c9">×2 · granted at double cost (1 in 6)</span><span style="background:#c9a227;color:#1b1712">H · built free (1 in 6)</span><span style="background:#d0342c">RED · refused, nothing built (1 in 6)</span></div>
+    <h4>Leisure facilities</h4><p>Once every building of a hotel is up, you can add its <b>leisure facilities</b> at the end of any of your turns — no planning permission needed, just pay the Bank. They give the highest nightly rate.</p>`,
+  ent: `<h4>Entrances</h4><p>Guests only stay at a hotel through its entrances. An entrance sits on a road space beside the hotel's land; each space can hold one entrance. A hotel needs its <b>main building</b> before it can have one.</p>
+    <p>Each time you pass the <b>Town Hall</b> you may buy <b>one entrance for each</b> of your hotels, at the price on its deed. The free entrance space gives one for nothing.</p>
+    <h4>Staying at a hotel</h4><p>Land on a rival's entrance and you must stay: roll the die for the number of nights and pay <b>nights × the nightly rate</b> for what's built there. The more buildings (and the facilities), the higher the rate.</p>`,
+  money: `<h4>Can't pay?</h4><p>If you owe more than you have, you must put one of your hotels up for <b>auction</b> to the other players. Bidding starts at a <b>reserve price</b> of half of everything spent on that hotel (land, buildings, facilities and entrances). The money goes towards your debt. If nobody bids, the <b>Bank buys it at the reserve</b>, knocks down every building and entrance, and the land goes back on sale — anyone landing on a buying space beside it can buy it again.</p>
+    <p>If building work you couldn't pay for is on the hotel you auction, that work is cancelled.</p>
+    <p>A player with no money, no hotels and no land left is <b>out of the game</b>.</p>`,
+  end: `<h4>Winning</h4><p>The last player left in the game is the <b>Hotel Tycoon</b>.</p><p>If nothing changes hands for a long time (80 turns), the game ends and the <b>richest player wins</b> — counting cash, land, buildings and entrances.</p>
+    <p><i>These are the 1986 MB rules as this game plays them.</i></p>`
+};
+function openRules(tab) {
+  Sound.ui('open');
+  const show = t => { document.querySelectorAll('.rulesTabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); $('rulesBody').innerHTML = RULES[t]; $('rulesBody').scrollTop = 0; };
+  document.querySelectorAll('.rulesTabs button').forEach(b => b.onclick = () => show(b.dataset.t));
+  show(tab || 'aim');
+  $('rules').classList.remove('hidden'); $('rulesClose').focus();
+}
+function closeRules() { if ($('rules').classList.contains('hidden')) return; Sound.ui('close'); $('rules').classList.add('hidden'); }
+$('rulesClose').onclick = closeRules;
+$('rules').addEventListener('click', e => { if (e.target === $('rules')) closeRules(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeRules(); });
+$('rulesStart').onclick = () => openRules();
+$('rulesGame').onclick = () => openRules();
+$('rulesDeeds').onclick = () => openRules();
+
+function closeDeeds() {
+  if (!$('deeds').classList.contains('hidden')) Sound.ui('close'); $('deeds').classList.add('hidden'); }
+$('deedsBtn').onclick = () => openDeeds();
+$('deedsClose').onclick = closeDeeds;
+$('deeds').addEventListener('click', e => { if (e.target === $('deeds')) closeDeeds(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeDeeds(); });
+
+// ---------------------------------------------------------------- HNN: the news channel
+const WX_ICON = {
+  sunny: '<svg viewBox="0 0 24 24" fill="none" stroke="#ffd34d" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5" fill="#ffd34d"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></svg>',
+  fair: '<svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><circle cx="9" cy="9" r="3.6" fill="#ffd34d"/><path d="M9 2.5v1.6M3.6 9H2M4.5 4.5l1.1 1.1M13.5 4.5l-1.1 1.1" stroke="#ffd34d" stroke-width="1.8"/><path d="M8 19h10a3.5 3.5 0 0 0 .3-7 5 5 0 0 0-9.6 1.4A2.9 2.9 0 0 0 8 19z" fill="#e8eef5"/></svg>',
+  cloudy: '<svg viewBox="0 0 24 24"><path d="M6.5 19h11a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.8 1.5A3.3 3.3 0 0 0 6.5 19z" fill="#cfd8e2"/></svg>',
+  rain: '<svg viewBox="0 0 24 24" fill="none" stroke-linecap="round"><path d="M6.5 15h11a4 4 0 0 0 .4-8 5.6 5.6 0 0 0-10.8 1.5A3.3 3.3 0 0 0 6.5 15z" fill="#aab6c3"/><path d="M8 17.5l-1 3M12 17.5l-1 3M16 17.5l-1 3" stroke="#7fc1f2" stroke-width="1.8"/></svg>',
+  windy: '<svg viewBox="0 0 24 24" fill="none" stroke="#d8e6f5" stroke-width="1.9" stroke-linecap="round"><path d="M3 9h11a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h7"/></svg>',
+  mist: '<svg viewBox="0 0 24 24" fill="none" stroke="#c9d3dd" stroke-width="1.9" stroke-linecap="round"><path d="M4 8h16M2.5 12h15M6 16h14M4 20h10"/></svg>',
+  night: '<svg viewBox="0 0 24 24"><path d="M15.5 3.5a8.5 8.5 0 1 0 5 13.8A7 7 0 0 1 15.5 3.5z" fill="#e9e2c4"/></svg>'
+};
+let envNow = null, dayNo = 1, lastHourSeen = null, lastWeather = null, wasNight = null;
+const hhmm = h => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60 / 15) * 15).padStart(2, '0')}`;
+function renderClock() {
+  if (!envNow) return;
+  $('tvTime').textContent = `Day ${dayNo} · ${hhmm(envNow.hour)}`;
+  const icon = envNow.night > 0.6 && (envNow.weather === 'sunny' || envNow.weather === 'fair') ? WX_ICON.night : WX_ICON[envNow.weather];
+  const nightLabel = { sunny: 'Clear', fair: 'Partly cloudy' }[envNow.weather];
+  $('tvWxIcon').innerHTML = icon; $('tvWx').textContent = `${envNow.night > 0.6 && nightLabel ? nightLabel : envNow.label} ${envNow.temp}°`;
+}
+function onEnvChange(e) {
+  if (lastHourSeen !== null && e.hour < lastHourSeen - 12) dayNo++;
+  lastHourSeen = e.hour; envNow = e; renderClock();
+  if (state && $('tv') && !$('tv').classList.contains('hidden')) {
+    if (lastWeather !== null && e.weather !== lastWeather) addStories([weatherStory(e)]);
+    const night = e.night > 0.5;
+    if (wasNight !== null && night !== wasNight && e.timeMode === 'auto') addStories([night ? { k: 'Tonight', h: 'The lights come on along the strip', s: 'Windows glow, pools are lit and the street lamps flicker on.' } : { k: 'Morning', h: `Dawn breaks on day ${dayNo}`, s: 'Early guests are already checking in along the strip.' }]);
+    wasNight = night;
+  } else wasNight = e.night > 0.5;
+  lastWeather = e.weather;
+}
+function weatherStory(e) {
+  const dark = e.night > 0.6;
+  const nightLines = { sunny: ['Clear skies tonight', 'A starry night over the strip — chilly by the pools.'], fair: ['A few clouds drift over tonight', 'Mostly clear, with the odd cloud passing the moon.'] };
+  const lines = dark && nightLines[e.weather] ? nightLines[e.weather] : { sunny: ['Sunshine over the strip', 'Clear skies — a perfect day for the pool.'], fair: ['Sunny spells and the odd cloud', 'Cloud shadows drifting across the board.'], cloudy: ['Grey skies roll in', 'A dull spell — hoteliers hope guests stay indoors.'], rain: ['Showers sweep the board', 'Roads are wet and the pools are empty. Umbrellas out.'], windy: ['Gusty winds batter the strip', 'Palms bending and flags streaming. Hold on to your deeds.'], mist: ['Mist settles over the board', 'Visibility is down; drive carefully between the hotels.'] }[e.weather];
+  return { k: 'Weather', h: lines[0], s: `${lines[1]} Around ${e.temp}°.` };
+}
+// Turn engine events into headlines.
+function storiesFrom(ev, ctx) {
+  const out = [], P = i => esc(pname(i)), H = id => esc(hname(id));
+  for (const e of ev) switch (e.type) {
+    case 'move': if (e.roll === 6) out.push({ k: 'Travel', h: `${P(e.player)} puts the foot down`, s: 'A six on the die — straight back for another turn.' }); break;
+    case 'bank': out.push({ k: 'Finance', h: `Bank pays out ${fmt(2000)} to ${P(e.player)}`, s: 'Collected on driving past the Bank.' }); break;
+    case 'land':
+      if (e.from !== undefined) out.push({ k: 'Breaking', hot: true, h: `Hostile takeover at the ${H(e.hotel)}`, s: `${P(e.player)} forces ${P(e.from)} to sell the land for ${fmt(BOARD.hotels[e.hotel].compulsory)}.` });
+      else out.push({ k: 'Property', h: `${P(e.player)} snaps up the ${H(e.hotel)} site`, s: `Land bought from the Bank for ${fmt(BOARD.hotels[e.hotel].land)}.` });
+      break;
+    case 'spin': {
+      const id = e.hotel || ctx.spinHotel, who = P(ctx.actor);
+      if (!id) break;
+      if (e.result === 'red') out.push({ k: 'Planning', hot: true, h: `Council throws out ${who}'s ${H(id)} plans`, s: 'Permission refused. Nothing gets built this time.' });
+      else if (e.result === 'H') out.push({ k: 'Planning', h: `Free build! Council waives the fees at the ${H(id)}`, s: `${who} builds without paying a penny.` });
+      else if (e.result === '2') out.push({ k: 'Planning', h: `Red tape doubles the bill at the ${H(id)}`, s: `${who} gets permission — at twice the price.` });
+      else out.push({ k: 'Planning', h: `Council approves ${who}'s ${H(id)} plans`, s: 'Permission granted at the normal cost.' });
+      break;
+    }
+    case 'built': {
+      const rate = E.nightlyRate(BOARD, state, e.hotel);
+      if (e.facilities) out.push({ k: 'Leisure', h: `Pools open at the ${H(e.hotel)}`, s: `Leisure facilities complete — rooms now ${fmt(rate)} a night.` });
+      else out.push({ k: 'Construction', h: `Ribbon cut at the ${H(e.hotel)}`, s: `New building open — rooms now ${fmt(rate)} a night.` });
+      break;
+    }
+    case 'entrance': out.push({ k: 'Business', h: `New entrance opens at the ${H(e.hotel)}`, s: 'Any rival who stops beside it has to check in.' }); break;
+    case 'stay': out.push({ k: 'Tourism', h: `${P(e.player)} checks in to the ${H(e.hotel)}`, s: `${e.nights} night${e.nights > 1 ? 's' : ''} — a bill of ${fmt(e.amount)} paid to ${P(e.to)}.` }); break;
+    case 'auctionStart': out.push({ k: 'Markets', h: `The ${H(e.hotel)} goes under the hammer`, s: e.reserve ? `Bidding opens at ${fmt(e.reserve)}.` : 'Bidding is open.' }); break;
+    case 'auctionSold': out.push({ k: 'Markets', h: `Sold! ${P(e.player)} wins the ${H(e.hotel)}`, s: `${fmt(e.amount)} paid to ${P(e.from)}.` }); break;
+    case 'demolished': out.push({ k: 'Breaking', hot: true, h: `Wrecking ball for the unsold ${H(e.hotel)}`, s: e.bank ? `No bids. The Bank pays ${P(e.from)} ${fmt(e.amount)} and the land is back on sale.` : 'No bids. The deed returns to the Bank.' }); break;
+    case 'debt': out.push({ k: 'Finance', h: `${P(e.player)} can't pay the bill`, s: `${fmt(e.amount)} owed — a hotel must go to auction.` }); break;
+    case 'bankrupt': out.push({ k: 'Breaking', hot: true, h: `${P(e.player)} goes bust`, s: 'No money, no hotels — out of the game.' }); break;
+    case 'win': out.push({ k: 'Special report', hot: true, h: `${P(e.player)} crowned Hotel Tycoon`, s: e.stalemate ? 'The richest tycoon when the market went quiet.' : 'The last tycoon standing.' }); break;
+  }
+  return out;
+}
+function addStories(list) {
+  if (!state || !list.length) return;
+  state.news = state.news || [];
+  const t = envNow ? `D${dayNo} ${hhmm(envNow.hour)}` : '';
+  for (const s of list) state.news.push(Object.assign({ t }, s));
+  if (state.news.length > 80) state.news.splice(0, state.news.length - 80);
+  renderTV(true);
+}
+function renderTV(fresh) {
+  if (!state) return;
+  const news = state.news || [], s = news[news.length - 1];
+  const story = $('tvStory');
+  story.innerHTML = s ? `<span class="tvKick ${s.hot ? 'hot' : ''}">${s.k}</span><div class="tvHead">${s.h}</div><div class="tvSub">${s.s || ''}</div>` : '';
+  if (fresh && s) { story.classList.remove('enter'); void story.offsetWidth; story.classList.add('enter'); }
+  const tick = news.slice(-9, -1).reverse().map(n => `<span>${n.h}</span>`).join('') || '<span>Welcome to HNN — all the news from the Hotel strip</span>';
+  $('tvTicker').innerHTML = tick + tick;
+  $('tvTicker').style.animationDuration = Math.max(18, $('tvTicker').textContent.length * 0.11) + 's';
+  if ($('tv').classList.contains('arch')) renderArchive();
+}
+function renderArchive() {
+  const news = (state.news || []).slice().reverse();
+  $('tvArchive').innerHTML = news.map(n => `<div class="item"><span class="t">${esc(n.t || '')}</span><div class="k ${n.hot ? 'hot' : ''}">${n.k}</div><div>${n.h}</div><div class="s">${n.s || ''}</div></div>`).join('')
+    + `<details><summary>Full game log</summary><pre>${esc(state.log.slice(-200).join('\n'))}</pre></details>`;
+}
+$('tvArchBtn').onclick = () => { const tv = $('tv'), on = !tv.classList.contains('arch'); tv.classList.toggle('arch', on); $('tvArchBtn').setAttribute('aria-pressed', on); if (on) renderArchive(); fitTvSpace(); };
+$('tvMinBtn').onclick = () => { const tv = $('tv'), on = !tv.classList.contains('min'); tv.classList.toggle('min', on); $('tvMinBtn').textContent = on ? 'Show' : 'Hide'; $('tvMinBtn').setAttribute('aria-pressed', on); fitTvSpace(); };
+// drag the TV anywhere (it's a pop-out); once moved it no longer reserves space under the panel
+let tvMoved = false;
+(() => {
+  const grip = $('tvGrip'), tv = $('tv'); let d = null;
+  grip.addEventListener('pointerdown', e => { if (e.target.closest('button') || innerWidth <= 720) return; const r = tv.getBoundingClientRect(); d = [e.clientX - r.left, e.clientY - r.top]; grip.setPointerCapture(e.pointerId); });
+  grip.addEventListener('pointermove', e => {
+    if (!d) return; const r = tv.getBoundingClientRect();
+    const x = Math.max(4, Math.min(innerWidth - r.width - 4, e.clientX - d[0])), y = Math.max(4, Math.min(innerHeight - 40, e.clientY - d[1]));
+    Object.assign(tv.style, { left: x + 'px', top: y + 'px', bottom: 'auto' }); if (!tvMoved) { tvMoved = true; fitTvSpace(); }
+  });
+  grip.addEventListener('pointerup', () => { d = null; });
+})();
+function fitTvSpace() { const tv = $('tv'); const h = (!tvMoved && innerWidth > 720 && !tv.classList.contains('hidden')) ? tv.offsetHeight + 14 : 0; document.documentElement.style.setProperty('--tvH', h + 'px'); }
+
+// ---------------------------------------------------------------- camera dock
+let driverSeat = null;
+function setDriver(on) {
+  if (on && state) { driverSeat = state.players[state.current].seat; view.setDriverView(driverSeat); }
+  else { driverSeat = null; view.setDriverView(null); }
+  $('camDrive').classList.toggle('on', !!on); $('camDrive').setAttribute('aria-pressed', !!on);
+}
+$('camIn').onclick = () => view.zoomBy(0.72);
+$('camOut').onclick = () => view.zoomBy(1.38);
+$('camHome').onclick = () => { if (view.isDriverView()) setDriver(false); else view.flyTo('home'); };
+$('camTop').onclick = () => { if (view.isDriverView()) setDriver(false); setTimeout(() => view.flyTo('top'), 0); };
+$('camDrive').onclick = () => setDriver(!view.isDriverView());
+function showCamHint() { const h = $('camHint'); if (innerWidth <= 720) return; h.classList.remove('hidden', 'gone'); clearTimeout(showCamHint.t); showCamHint.t = setTimeout(() => h.classList.add('gone'), 9000); }
+
+// what the panels cover, so "whole board" frames the board in the free space
+function updateSafeArea() {
+  if (!view) return;
+  const vis = id => { const el = $(id); return el && !el.classList.contains('hidden') && el.offsetParent !== null ? el.getBoundingClientRect() : null; };
+  const t = vis('scoreBar'), dock0 = vis('camDock'), dc = vis('decide');
+  const sideDock = dock0 && dock0.height > dock0.width, right = sideDock ? innerWidth - dock0.left + 6 : 10, dock = sideDock ? null : dock0; // on phones the camera buttons stand in a column on the right
+  const b = dc && (dc.top > innerHeight * 0.5) ? dc : null; // a folded or low choice card covers the bottom of the screen
+  const left = innerWidth > 720 ? (parseFloat(document.documentElement.style.getPropertyValue('--insetL')) || 0) : 0;
+  view.setSafeArea({ top: (t ? t.bottom : 0) + 6, bottom: Math.max(b ? innerHeight - b.top : 0, dock ? innerHeight - dock.top : 0) + 6, right, left: left + 6 });
+}
+function fitInset() {
+  // only the set-up panel takes a column on the left; in a game the menu sits in the bottom-left corner
+  const inset = innerWidth > 720 && $('gamePanel').classList.contains('hidden') ? $('setupPanel').offsetWidth + 16 : 0;
+  view.setInsetLeft(inset);
+  document.documentElement.style.setProperty('--insetL', inset + 'px');
+  const bar = $('scoreBar'); if (!bar.classList.contains('hidden')) document.documentElement.style.setProperty('--barH', bar.offsetHeight + 'px');
+  fitTvSpace(); updateSafeArea();
+}
+
+// ---------------------------------------------------------------- boot
+async function start() {
+  try { await Promise.race([Promise.all(['700 20px "Barlow Condensed"', '600 20px "Barlow Condensed"'].map(f => document.fonts.load(f))), wait(2500)]); } catch (e) {}
+  try {
+    view = createBoard3D({ THREE, OrbitControls, EffectComposer, RenderPass, ShaderPass, OutputPass, RoomEnvironment, mergeGeometries, UnrealBloomPass, toCreasedNormals, GTAOPass }, $('stage'), BOARD, SCENERY, { tiltShift: false, hour: 9.5 });
+    let autoTier = 'full'; try { autoTier = localStorage.getItem('hotelAutoTier') || (localStorage.getItem('hotelAutoLite') === '1' ? 'lite' : 'full'); } catch (er) {}
+    view.onPerf(p => {
+      document.body.classList.toggle('lite', plainForced === null ? !!p.lite : plainForced);
+      if (p.mode === 'auto' && (p.tier === 'lite' || p.tier === 'low')) { try { localStorage.setItem('hotelAutoTier', p.tier); } catch (er) {} }
+      const T = { full: 'full look', lite: 'Lite look', low: 'Low look', custom: 'your own mix of switches' }[p.tier] || p.tier;
+      $('gfxNote').textContent = p.mode === 'auto' ? `Auto is using the ${T} on this device.` : p.mode === 'custom' ? 'Custom: ' + T + '.' : `Fixed: ${T}.`;
+      document.querySelectorAll('.perfLab input[data-opt]').forEach(cb => { const k = cb.dataset.opt; cb.checked = k === 'lite' ? p.profile === 'lite' : !!(p.opts && p.opts[k]); });
+      $('plainOn').checked = document.body.classList.contains('lite');
+    });
+    view.setQuality($('gfxSel').value || 'auto', { tier: autoTier });
+    // is the browser drawing 3D without the graphics chip? Then nothing in the game will make it smooth: say how to fix it.
+    try {
+      const gl = view.renderer.getContext(), dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      const gpu = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
+      $('gpuNote').textContent = 'Graphics: ' + gpu;
+      if (/swiftshader|llvmpipe|softpipe|software|basic render/i.test(gpu)) {
+        const msg = 'This browser is drawing the 3D board without your graphics chip (hardware acceleration is off), so it will be slow. In Chrome or Edge: Settings → System → turn on "Use graphics acceleration when available", then restart the browser.';
+        $('gpuNote').textContent = msg + ' (' + gpu + ')'; setTimeout(() => toast('Hardware graphics acceleration is off in this browser — see Table options › Performance switches', 'bad'), 3000);
+      }
+    } catch (er) {}
+    view.onSound((n, d) => Sound.board(n, d));
+    setTimeout(prepareSpaceImages, 4000);
+    setInterval(() => Sound.weather(view.getEnv()), 1500);
+  } catch (err) {
+    console.error(err);
+    $('loading').innerHTML = '<div style="max-width:32ch;text-align:center;line-height:1.5">This device could not start 3D graphics. Try another browser, or turn on hardware acceleration.</div>';
+    return;
+  }
+  window.hotelView = view; window.BOARD = BOARD;
+  fitInset(); window.addEventListener('resize', () => { fitInset(); });
+  const mo = new MutationObserver(fitInset); mo.observe($('setupPanel'), { attributes: true }); mo.observe($('gamePanel'), { attributes: true });
+  new ResizeObserver(() => fitTvSpace()).observe($('tv'));
+  view.onPick(id => {
+    const viewer = deedViewer();
+    if (viewer && state) { const o = state.plots[id].owner; openDeeds(id); return; }
+    view.flyTo(id);
+  });
+  view.onEnv(onEnvChange);
+  setInterval(renderClock, 2000);
+  for (let i = 0; i < 4; i++) view.setCar(i, false);
+  view.flyTo('home');
+  window._debug = { get state() { return state; }, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
+  requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done')));
+}
+start();
+</script>
