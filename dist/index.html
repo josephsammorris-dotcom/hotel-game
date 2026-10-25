@@ -593,12 +593,51 @@ body.lite{--glass:rgba(28,26,24,.93)}
 .pseat{display:flex;align-items:center;gap:8px;justify-content:flex-start;text-align:left;border:2px solid transparent;min-height:46px}.pseat.me{border-color:var(--pc);background:rgba(255,255,255,.1)}.pseat:disabled{opacity:.55}
 #netBar{position:fixed;z-index:9;left:50%;top:calc(var(--barH) + 10px + env(safe-area-inset-top,0px));transform:translateX(-50%);background:rgba(160,60,40,.92);color:#fff;font-weight:600;font-size:.88rem;padding:7px 14px;border-radius:99px;box-shadow:0 6px 18px rgba(0,0,0,.35);pointer-events:none}
 #tvModeBtn{margin-top:4px}
+#title{position:fixed;inset:0;z-index:5;display:flex;align-items:center;padding:max(20px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) max(20px,env(safe-area-inset-bottom)) max(20px,env(safe-area-inset-left));background:linear-gradient(90deg,rgba(20,18,16,.78) 0%,rgba(20,18,16,.45) 38%,rgba(20,18,16,0) 62%);pointer-events:none}
+#title .tCard{pointer-events:auto;width:min(440px,100%);max-height:100%;overflow:auto;display:grid;gap:18px;animation:tIn .7s cubic-bezier(.2,1,.3,1)}
+@keyframes tIn{from{transform:translateY(16px)}to{transform:none}}
+.tKick{font:600 .78rem "Barlow Condensed",sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--muted)}
+.tLogo{font:700 clamp(4rem,12vw,6.6rem)/.86 "Barlow Condensed",sans-serif;letter-spacing:.08em;margin:6px 0 4px;color:var(--gold);text-shadow:0 4px 0 #a5800b,0 10px 30px rgba(0,0,0,.55)}
+.tSub{margin:0;font-size:1.02rem;color:var(--ink);text-shadow:0 2px 8px rgba(0,0,0,.6)}
+.tMenu{display:grid;gap:10px}
+.tBig{display:flex;align-items:center;gap:14px;text-align:left;padding:14px 16px;border-radius:14px;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);min-height:64px;transition:transform .15s,border-color .15s}
+.tBig:hover{transform:translateX(4px);border-color:rgba(255,255,255,.35)}
+.tBig b{display:block;font:700 1.25rem "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase}
+.tBig small{display:block;color:var(--muted);font-size:.86rem;margin-top:2px}
+.tBig.tGo{background:linear-gradient(135deg,rgba(242,196,23,.95),rgba(214,160,10,.95));color:#2b2214;border-color:transparent}.tBig.tGo small{color:#4a3a14}
+.tIc{font-size:1.6rem;width:36px;text-align:center;flex:none}
+.tRow{display:flex;gap:8px;flex-wrap:wrap}.tRow button{flex:1 1 0;min-width:0;background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.tPane{background:var(--glass);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:14px;padding:16px;display:grid;gap:12px}
+.tPane h2{margin:0}
+#tCode{font:700 2rem "Barlow Condensed",sans-serif;letter-spacing:.3em;text-transform:uppercase;text-align:center;padding:10px}
+#tSettingsSlot .tableCard{margin:0;background:none;border:none;padding:0}#tSettingsSlot .tableCard>summary{display:none}
+body.lite #title .tBig,body.lite .tPane{background:rgba(28,26,24,.93)}
+@media (max-width:720px){#title{align-items:flex-end;background:linear-gradient(0deg,rgba(20,18,16,.85) 0%,rgba(20,18,16,.5) 55%,rgba(20,18,16,0) 85%)}#title .tCard{width:100%}.tLogo{font-size:4.2rem}.tBig{padding:11px 14px;min-height:56px}.tBig small{font-size:.8rem}}
 </style>
 
 <div id="stage" aria-label="3D model of the Hotel board"></div>
 <div id="fpsBox" class="hidden"></div>
 <div id="netBar" class="hidden" role="status"></div>
 <div id="loading"><div>Setting out the board…</div></div>
+
+<section id="title" class="hidden" aria-label="Main menu">
+  <div class="tCard">
+    <div class="tBrand"><div class="tKick">MB Games · 1986 · the classic property game</div><h1 class="tLogo">HOTEL</h1><p class="tSub">Buy the land. Build the hotels. Bankrupt your rivals.</p></div>
+    <nav class="tMenu" id="tMain">
+      <button class="tBig tGo" id="tPlay"><span class="tIc">🎲</span><span><b>Play on this device</b><small>Pass-and-play for 2–4 players, with computer opponents</small></span></button>
+      <button class="tBig" id="tTV"><span class="tIc">📺</span><span><b>Play on a TV with phones</b><small>The board on the big screen, everyone plays on their own phone</small></span></button>
+      <button class="tBig" id="tJoin"><span class="tIc">📱</span><span><b>Join a game</b><small>Enter the code shown on the TV</small></span></button>
+      <button class="tBig hidden" id="tResume"><span class="tIc">⏵</span><span><b>Continue saved game</b><small id="tResumeSub"></small></span></button>
+      <div class="tRow"><button id="tRules">📖 How to play</button><button id="tDeeds">📜 Title deeds</button><button id="tSettings">⚙ Settings</button></div>
+    </nav>
+    <div class="tPane hidden" id="tJoinPane">
+      <h2>Join a game</h2><p class="note">Type the code shown on the TV screen.</p>
+      <input type="text" id="tCode" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="CODE">
+      <div class="row"><button class="primary" id="tJoinGo">Join</button><button id="tJoinBack">← Back</button></div>
+    </div>
+    <div class="tPane hidden" id="tSettingsPane"><h2>Settings</h2><div id="tSettingsSlot"></div><div class="row"><button id="tSettingsBack">← Back</button></div></div>
+  </div>
+</section>
 
 <aside class="panel" id="setupPanel">
   <header>
@@ -612,6 +651,7 @@ body.lite{--glass:rgba(28,26,24,.93)}
   </div>
   <label class="check"><input type="checkbox" id="claimMode"><span>Claim it or lose it — Bank money, stay payments and entrance purchases must be claimed before the next player rolls, or they're lost.</span></label>
   <div class="row">
+    <button id="setupBack" class="hidden">← Menu</button>
     <button class="primary" id="startBtn">Start game</button>
     <button id="rulesStart" class="rulesBtn">📖 How to play</button>
     <button id="resumeBtn" class="hidden">Resume saved game</button>
@@ -641,6 +681,7 @@ body.lite{--glass:rgba(28,26,24,.93)}
         <button id="tilt" aria-pressed="false">Miniature blur</button>
         <button id="fastBtn">Computer speed: normal</button>
         <button id="newBtn">New game</button>
+        <button id="menuBtn">Main menu</button>
       </div>
       <div class="skyRow">
         <label>Sky <select id="timeSel"><option value="auto">Day &amp; night</option><option value="dawn">Dawn</option><option value="day">Midday</option><option value="dusk">Dusk</option><option value="night">Night</option></select></label>
@@ -2927,6 +2968,15 @@ function createBoard3D(deps, container, board, scenery, opts) {
   }
   // Combine the meshes of a rigid assembly (a car body, a wheel) that share a material into one mesh each, in the
   // assembly's own space, so it draws in a handful of calls instead of dozens. The originals are discarded.
+  // Bake a transform into a copy of a geometry. A mirrored transform (negative determinant) turns the triangles
+  // inside-out, which three.js would cull, so their winding is flipped back.
+  function flipWinding(g) {
+    if (g.index) { const a = g.index.array; for (let i = 0; i + 2 < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } g.index.needsUpdate = true; return; }
+    for (const k in g.attributes) { const at = g.attributes[k], n = at.itemSize, arr = at.array;
+      for (let i = 0; i + 2 < at.count; i += 3) for (let c = 0; c < n; c++) { const t = arr[(i + 1) * n + c]; arr[(i + 1) * n + c] = arr[(i + 2) * n + c]; arr[(i + 2) * n + c] = t; }
+      at.needsUpdate = true; }
+  }
+  function bake(g, m) { g.applyMatrix4(m); if (m.determinant() < 0) flipWinding(g); return g; }
   function mergeRigid(container, include) {
     container.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(container.matrixWorld).invert(), groups = new Map(), victims = [];
@@ -2939,7 +2989,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
       if (list.length < 2) continue;
       const geos = list.map(o => { let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
         if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-        g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); return g; });
+        return bake(g, new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); });
       const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) continue;
       const m = new THREE.Mesh(mg, list[0].material); m.renderOrder = list[0].renderOrder; container.add(m);
       list.forEach(o => victims.push(o));
@@ -4028,7 +4078,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   function makeBatch(list, hotel) {
     // a lone ordinary mesh gains nothing from merging; a lone split part must still be merged, or the faces it carries would vanish
     if (list.length < 2 && !(list.length === 1 && list[0].geo !== list[0].o.geometry)) return null;
-    const geos = list.map(e => { const c = e.geo.clone(); c.applyMatrix4(e.o.matrixWorld); return c; });
+    const geos = list.map(e => bake(e.geo.clone(), e.o.matrixWorld));
     const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) return null;
     const f = list[0].o, mesh = new THREE.Mesh(mg, list[0].mat); mesh.castShadow = f.castShadow; mesh.receiveShadow = f.receiveShadow; mesh.renderOrder = f.renderOrder;
     mesh.matrixAutoUpdate = false; mesh.userData.merged = true; scene.add(mesh);
@@ -4472,6 +4522,7 @@ $('startBtn').onclick = () => {
   state.news = [];
   beginGame();
   addStories([{ k: 'Good evening', h: 'A new day for the Hotel strip', s: `${state.players.length} tycoons start with ${fmt(12000)} each. ${pname(state.current)} goes first.` }]);
+  saveGame();
 };
 $('resumeBtn').onclick = () => { state = loadGame(); if (state) { state.news = state.news || []; beginGame(); } };
 $('newBtn').onclick = () => {
@@ -5226,8 +5277,8 @@ function renderActions() {
 // ---------------------------------------------------------------- title deeds: any deed not held by another player, on your own turn
 function deedViewer() { if (!state || state.winner !== null) return null; const p = NET.mode === 'player' ? state.players[NET.me] : state.players[state.current]; return p && mine(p) && p.active ? p : null; }
 function titleDeed(id, viewer) {
-  const h = BOARD.hotels[id], plot = state.plots[id], c = SCENERY.landColours[id], n = h.stages.length - 1;
-  const ents = Object.values(state.entrances).filter(x => x === id).length;
+  const h = BOARD.hotels[id], plot = state ? state.plots[id] : { owner: null, built: 0, facilities: false }, c = SCENERY.landColours[id], n = h.stages.length - 1;
+  const ents = state ? Object.values(state.entrances).filter(x => x === id).length : 0;
   const rows = h.stages.map(([name, cost, rate], k) => { const built = k < n ? k < plot.built : plot.facilities; return `<tr class="${built ? 'built' : ''}"><td>${esc(k === n ? 'Leisure facilities' : name)}</td><td class="num">${fmt(cost)}</td><td class="num">${fmt(rate)}</td></tr>`; }).join('');
   const mine = viewer && plot.owner === viewer.id;
   const holder = plot.owner === null ? null : state.players[plot.owner];
@@ -5246,10 +5297,10 @@ function titleDeed(id, viewer) {
 }
 function openDeeds(focusId) {
   Sound.ui('open');
-  const viewer = deedViewer(); if (!viewer) return;
+  const viewer = deedViewer(); if (!viewer && state) return; // no game yet: browse every deed
   const order = HOTELS.slice().sort((a, b) => BOARD.hotels[a].land - BOARD.hotels[b].land);
   $('deedsTitle').textContent = 'Title deeds';
-  $('deedsSub').textContent = `${viewer.name}'s turn · every hotel's deed — the coloured band shows who owns it.`;
+  $('deedsSub').textContent = viewer ? `${viewer.name}'s turn · every hotel's deed — the coloured band shows who owns it.` : 'Every hotel on the board: what the land, buildings and entrances cost, and what guests pay per night.';
   $('deedGrid').innerHTML = order.map(id => {
     return titleDeed(id, viewer);
   }).join('');
@@ -5528,8 +5579,8 @@ async function start() {
   setInterval(renderClock, 2000);
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
-  netInit();
-  window._debug = { NET, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
+  netInit(); titleInit();
+  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
   // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
   ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
@@ -5750,12 +5801,7 @@ function renderPhoneLobby() {
 // ---------------------------------------------------------------- start-up for each mode
 function netInit() {
   const lead = $('setupPanel').querySelector('.lead');
-  if (NET.mode === 'local') {
-    const b = document.createElement('button'); b.id = 'tvModeBtn'; b.textContent = '📺 Play on a TV with phones';
-    b.onclick = () => { const url = (relayHere ? location.origin + location.pathname : RELAY_HOME + '/') + '?tv'; if (relayHere) location.href = url; else window.open(url, '_blank'); };
-    $('startBtn').parentElement.appendChild(b);
-    return;
-  }
+  if (NET.mode === 'local') return;
   if (!relayHere) { lead.textContent = 'Playing with phones needs the online version of the game.'; return; }
   document.body.classList.add(NET.mode === 'host' ? 'tvMode' : 'phoneMode');
   $('seats').closest('.card').classList.add('hidden');
@@ -5797,5 +5843,59 @@ function netInit() {
   netStatus(); netConnect();
 }
 
+// ================================================================ the title screen (pass-and-play / single-screen version)
+const baseURL = () => location.origin + location.pathname;
+let tableHome = null;
+function showTitle() {
+  if (NET.mode !== 'local') return;
+  $('setupPanel').classList.add('hidden'); $('title').classList.remove('hidden'); titlePane('tMain');
+  const sv = loadGame();
+  $('tResume').classList.toggle('hidden', !(sv && sv.winner === null));
+  if (sv && sv.winner === null) $('tResumeSub').textContent = `${sv.players.map(p => p.name).join(', ')} · turn ${sv.turn + 1}`;
+  if (view) { view.flyTo('home'); setTimeout(() => { if (!$('title').classList.contains('hidden')) { view.controls.autoRotate = true; view.controls.autoRotateSpeed = 0.35; } }, 2600); }
+}
+function hideTitle() { $('title').classList.add('hidden'); if (view) view.controls.autoRotate = false; titlePane('tMain'); }
+function titlePane(id) {
+  for (const p of ['tMain', 'tJoinPane', 'tSettingsPane']) $(p).classList.toggle('hidden', p !== id);
+  // Settings borrows the table options card from the game panel, and gives it back
+  const card = $('tableCard');
+  if (id === 'tSettingsPane') { if (!tableHome) tableHome = { parent: card.parentElement, next: card.nextSibling }; $('tSettingsSlot').appendChild(card); card.open = true; $('newBtn').classList.add('hidden'); $('menuBtn').classList.add('hidden'); }
+  else if (tableHome && card.parentElement === $('tSettingsSlot')) { tableHome.parent.insertBefore(card, tableHome.next); card.open = false; if (NET.mode !== 'player') $('newBtn').classList.remove('hidden'); $('menuBtn').classList.remove('hidden'); }
+}
+function openPlayTV() { const url = (relayHere ? baseURL() : RELAY_HOME + '/') + '?tv'; if (relayHere) location.href = url; else window.open(url, '_blank'); }
+function joinCode() {
+  const code = $('tCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (code.length < 4) { toast('Type the code shown on the TV.', 'bad'); $('tCode').focus(); return; }
+  const url = (relayHere ? baseURL() : RELAY_HOME + '/') + '?join=' + code; if (relayHere) location.href = url; else window.open(url, '_blank');
+}
+// leave the current game for the menu: pass-and-play games stay saved (Continue), TV games carry on when the TV page reopens
+async function toMenu() {
+  if (NET.mode !== 'local') { const ok = !state || state.winner !== null || await confirmBox('Leave this game?', NET.mode === 'host' ? 'The game is saved on this screen and carries on when you open the TV page again.' : 'You can rejoin your seat by scanning the code on the TV again.', 'Leave'); if (ok) location.href = baseURL(); return; }
+  if (state && state.winner === null && !(await confirmBox('Back to the main menu?', 'Your game is saved: pick <b>Continue saved game</b> to carry on.', 'Main menu'))) return;
+  clearTimeout(botTimer);
+  if (view.isDriverView()) setDriver(false);
+  finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
+  resetBoard(); hideDice(); hideSpinner(); hideLanded(); closeDeeds(); hideProposal(); proposalSeen = null;
+  $('gamePanel').classList.add('hidden'); $('tv').classList.add('hidden'); $('camDock').classList.add('hidden'); hideMats();
+  state = null; showTitle();
+}
+function titleInit() {
+  $('menuBtn').onclick = () => { Sound.ui('click'); toMenu(); };
+  if (NET.mode !== 'local') { // TV and phone screens open straight into their lobby; this takes them back to the menu
+    $('setupBack').classList.remove('hidden'); $('setupBack').onclick = () => { location.href = baseURL(); };
+    return;
+  }
+  $('setupBack').classList.remove('hidden'); $('setupBack').onclick = () => { Sound.ui('back'); showTitle(); };
+  $('tPlay').onclick = () => { Sound.init(); Sound.ui('open'); hideTitle(); $('setupPanel').classList.remove('hidden'); };
+  $('tTV').onclick = () => { Sound.ui('click'); openPlayTV(); };
+  $('tJoin').onclick = () => { Sound.ui('open'); titlePane('tJoinPane'); setTimeout(() => $('tCode').focus(), 50); };
+  $('tJoinBack').onclick = $('tSettingsBack').onclick = () => { Sound.ui('back'); titlePane('tMain'); };
+  $('tJoinGo').onclick = joinCode; $('tCode').onkeydown = e => { if (e.key === 'Enter') joinCode(); };
+  $('tResume').onclick = () => { Sound.init(); const sv = loadGame(); if (!sv) return; hideTitle(); state = sv; state.news = state.news || []; beginGame(); };
+  $('tRules').onclick = () => { Sound.init(); openRules(); };
+  $('tDeeds').onclick = () => { Sound.init(); openDeeds(); };
+  $('tSettings').onclick = () => { Sound.init(); Sound.ui('open'); titlePane('tSettingsPane'); };
+  showTitle();
+}
 start();
 </script>

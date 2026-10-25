@@ -1083,6 +1083,15 @@ function createBoard3D(deps, container, board, scenery, opts) {
   }
   // Combine the meshes of a rigid assembly (a car body, a wheel) that share a material into one mesh each, in the
   // assembly's own space, so it draws in a handful of calls instead of dozens. The originals are discarded.
+  // Bake a transform into a copy of a geometry. A mirrored transform (negative determinant) turns the triangles
+  // inside-out, which three.js would cull, so their winding is flipped back.
+  function flipWinding(g) {
+    if (g.index) { const a = g.index.array; for (let i = 0; i + 2 < a.length; i += 3) { const t = a[i + 1]; a[i + 1] = a[i + 2]; a[i + 2] = t; } g.index.needsUpdate = true; return; }
+    for (const k in g.attributes) { const at = g.attributes[k], n = at.itemSize, arr = at.array;
+      for (let i = 0; i + 2 < at.count; i += 3) for (let c = 0; c < n; c++) { const t = arr[(i + 1) * n + c]; arr[(i + 1) * n + c] = arr[(i + 2) * n + c]; arr[(i + 2) * n + c] = t; }
+      at.needsUpdate = true; }
+  }
+  function bake(g, m) { g.applyMatrix4(m); if (m.determinant() < 0) flipWinding(g); return g; }
   function mergeRigid(container, include) {
     container.updateMatrixWorld(true);
     const inv = new THREE.Matrix4().copy(container.matrixWorld).invert(), groups = new Map(), victims = [];
@@ -1095,7 +1104,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
       if (list.length < 2) continue;
       const geos = list.map(o => { let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
         if (!g.attributes.uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-        g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); return g; });
+        return bake(g, new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); });
       const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) continue;
       const m = new THREE.Mesh(mg, list[0].material); m.renderOrder = list[0].renderOrder; container.add(m);
       list.forEach(o => victims.push(o));
@@ -2184,7 +2193,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   function makeBatch(list, hotel) {
     // a lone ordinary mesh gains nothing from merging; a lone split part must still be merged, or the faces it carries would vanish
     if (list.length < 2 && !(list.length === 1 && list[0].geo !== list[0].o.geometry)) return null;
-    const geos = list.map(e => { const c = e.geo.clone(); c.applyMatrix4(e.o.matrixWorld); return c; });
+    const geos = list.map(e => bake(e.geo.clone(), e.o.matrixWorld));
     const mg = mergeGeometries(geos, false); geos.forEach(g => g.dispose()); if (!mg) return null;
     const f = list[0].o, mesh = new THREE.Mesh(mg, list[0].mat); mesh.castShadow = f.castShadow; mesh.receiveShadow = f.receiveShadow; mesh.renderOrder = f.renderOrder;
     mesh.matrixAutoUpdate = false; mesh.userData.merged = true; scene.add(mesh);
