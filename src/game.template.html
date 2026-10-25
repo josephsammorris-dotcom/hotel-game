@@ -609,6 +609,10 @@ body.lite{--glass:rgba(28,26,24,.93)}
 #tSettingsSlot .tableCard{margin:0;background:none;border:none;padding:0}#tSettingsSlot .tableCard>summary{display:none}
 body.lite #title .tBig,body.lite .tPane{background:rgba(28,26,24,.93)}
 @media (max-width:720px){#title{align-items:flex-end;background:linear-gradient(0deg,rgba(20,18,16,.85) 0%,rgba(20,18,16,.5) 55%,rgba(20,18,16,0) 85%)}#title .tCard{width:100%}.tLogo{font-size:4.2rem}.tBig{padding:11px 14px;min-height:56px}.tBig small{font-size:.8rem}}
+.photoRow{display:flex;gap:14px;align-items:center;margin:0 0 12px}.pPic{width:84px;height:84px;border-radius:50%;flex:none;background:#2a2622 center/cover no-repeat;box-shadow:0 0 0 3px var(--gold),0 6px 14px rgba(0,0,0,.4)}.pPic.empty{background-image:none;display:grid;place-items:center}.pPic.empty::after{content:"🙂";font-size:2.2rem;opacity:.6}
+.photoBtns{display:grid;gap:6px;justify-items:start}
+.seatPic{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 0 0 2px var(--pc,#fff)}
+.psPic{width:20px;height:20px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 0 0 2px var(--pc,#fff);margin-right:2px;vertical-align:middle}
 </style>
 
 <div id="stage" aria-label="3D model of the Hotel board"></div>
@@ -1107,6 +1111,7 @@ function resetBoard() {
 const freshSeen = () => ({ entrances: {}, hotels: Object.fromEntries(HOTELS.map(id => [id, { built: 0, facilities: false }])), cars: [-1, -1, -1, -1], owners: Object.fromEntries(HOTELS.map(id => [id, null])) });
 
 function beginGame() {
+  setTimeout(applyPortraits, 0);
   $('setupPanel').classList.add('hidden'); $('gamePanel').classList.remove('hidden');
   $('camDock').classList.remove('hidden'); // the news TV is retired: the menu lives in its corner now
   showCamHint();
@@ -1436,10 +1441,11 @@ function cashBills(amount) {
   return notes.map(([d, n]) => noteHTML(d, n)).join('');
 }
 // the bar across the top: every player's balance, banknotes and property deeds, in seat order
+const withSeats = sum => { sum.forEach((p, i) => p.seat = state.players[i].seat); return sum; };
 function renderMats(sum) {
   const bar = $('scoreBar');
   bar.innerHTML = sum.slice().sort((a, b) => a.seat - b.seat).map(p => `<div class="pseg ${p.id === state.current && state.winner === null ? 'now' : ''} ${p.active ? '' : 'out'}" id="pseg${p.seat}" style="--pc:${COLS[p.seat]}" role="button" tabindex="0" title="Show ${esc(p.name)}'s money and title deeds">
-    <div class="psL"><div class="psName"><span class="sw" style="background:${COLS[p.seat]}"></span>${esc(p.name)}${p.active ? '' : ' · out'}</div><div class="psCash">${fmt(p.cash)}</div><div class="psNotes">${cashBills(p.cash)}</div></div>
+    <div class="psL"><div class="psName">${seatPhoto(p.seat) && state.players[p.id].phone ? `<img class="psPic" src="${seatPhoto(p.seat)}" alt="" style="--pc:${COLS[p.seat]}">` : `<span class="sw" style="background:${COLS[p.seat]}"></span>`}${esc(p.name)}${p.active ? '' : ' · out'}</div><div class="psCash">${fmt(p.cash)}</div><div class="psNotes">${cashBills(p.cash)}</div></div>
     <div class="psDeeds">${p.hotels.length ? p.hotels.map(deedCard).join('') : '<span class="psNone">No properties yet</span>'}</div></div>`).join('');
   bar.classList.remove('hidden');
   document.documentElement.style.setProperty('--barH', bar.offsetHeight + 'px');
@@ -2152,9 +2158,11 @@ function netStatus(text) {
 
 // ---------------------------------------------------------------- the TV
 function lobbyMsg() {
-  return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
+  return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, photo: s.photo || null, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
 }
-function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); if (state) render(); }
+function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); applyPortraits(); if (state) render(); }
+// a phone's selfie: a small square JPEG data URL, checked before it's kept or passed on
+const okPhoto = x => typeof x === 'string' && x.length < 60000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x);
 // the sky (weather + time of day) is the TV's: sent with every snapshot, every few seconds, and whenever it changes
 function netEnv(to) { if (NET.mode !== 'host' || !view) return; const m = { t: 'env', e: view.envState() }; if (to) m.to = to; netSend(m); }
 function hostMsg(m) {
@@ -2174,14 +2182,18 @@ function hostMsg(m) {
   if (x.t === 'act' && NET.started && state) { NET.inbox.push({ id, a: x.a }); netPump(); }
 }
 function seatPhone(id, x) {
-  const name = cleanName(x.name) || 'Player';
-  if (NET.started) { netSend(Object.assign(lobbyMsg(), { to: id })); return; } // mid-game: rejoining players get a snapshot via 'join'
+  const name = cleanName(x.name) || 'Player', photo = okPhoto(x.photo) ? x.photo : null;
+  if (NET.started) { // mid-game: rejoining players get a snapshot via 'join'; a returning player can still update their photo
+    const s = NET.seats.find(q => q && q.kind === 'phone' && q.id === id);
+    if (s && 'photo' in x && s.photo !== photo) { s.photo = photo; lobbyChanged(); saveGame(); }
+    netSend(Object.assign(lobbyMsg(), { to: id })); return;
+  } // mid-game: rejoining players get a snapshot via 'join'
   let at = NET.seats.findIndex(s => s && s.kind === 'phone' && s.id === id);
   const want = Number.isInteger(x.seat) && x.seat >= 0 && x.seat < 4 && !(NET.seats[x.seat] && NET.seats[x.seat].kind === 'phone' && NET.seats[x.seat].id !== id) ? x.seat : -1;
   if (want >= 0 && want !== at) { if (at >= 0) NET.seats[at] = null; at = want; }
   if (at < 0) at = NET.seats.findIndex(s => !s || s.kind !== 'phone');
   if (at < 0) { netSend({ t: 'full', to: id }); return; }
-  NET.seats[at] = { kind: 'phone', id, name };
+  NET.seats[at] = { kind: 'phone', id, name, photo };
   lobbyChanged();
 }
 function tvStart() {
@@ -2213,14 +2225,37 @@ function netWaitingFor(actor, btns) {
   } else { d.textContent = `${actor.name} is deciding…`; btns.appendChild(d); }
 }
 
+// ---------------------------------------------------------------- portraits: phone players' photos over their cars
+function seatInfo(i) { const L = NET.mode === 'host' ? lobbyMsg() : NET.lobby; return L && L.seats[i] ? L.seats[i] : null; }
+function seatPhoto(i) { const s = seatInfo(i); return s && s.kind === 'phone' ? s.photo || null : null; }
+function applyPortraits() {
+  if (!view || NET.mode === 'local') return;
+  for (let i = 0; i < 4; i++) {
+    const s = seatInfo(i), p = state ? state.players.find(q => q.seat === i) : null;
+    const phone = p ? !!p.phone : !!(s && s.kind === 'phone');
+    if (!phone) { view.setPortrait(i, null, null); continue; }
+    view.setPortrait(i, seatPhoto(i), (p ? p.name : s.name) || '?');
+  }
+}
+
 // ---------------------------------------------------------------- the phones
-function netHello() { netSend({ t: 'hello', name: lsGet('hotelPhoneName') || '', seat: NET.wantSeat }); }
+function netHello() { netSend({ t: 'hello', name: lsGet('hotelPhoneName') || '', seat: NET.wantSeat, photo: lsGet('hotelPhonePhoto') || null }); }
+// take a selfie: the front camera via the file picker (works on iPhone and Android without extra permissions);
+// cropped to a square around the face and shrunk to 160 px, about 8 KB
+async function photoFromFile(f) {
+  let img;
+  try { img = await createImageBitmap(f); } catch (e) { img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(f); }); }
+  const w = img.width, h = img.height, k = Math.min(w, h), c = document.createElement('canvas'); c.width = c.height = 160;
+  c.getContext('2d').drawImage(img, (w - k) / 2, (h - k) * 0.35, k, k, 0, 0, 160, 160);
+  return c.toDataURL('image/jpeg', 0.82);
+}
+function showOwnPhoto() { const ph = lsGet('hotelPhonePhoto'); $('phonePic').style.backgroundImage = ph ? `url(${ph})` : ''; $('phonePic').classList.toggle('empty', !ph); $('phoneNoPic').classList.toggle('hidden', !ph); $('phoneSnap').textContent = ph ? '📷 Retake' : '📷 Take a selfie'; }
 function netRequestSync() { clearTimeout(NET.syncT); NET.syncT = setTimeout(() => netSend({ t: 'sync' }), 50); }
 function phoneMsg(m) {
   if (m.t === 'welcome') { NET.hostOn = !!m.host; netStatus(); return; }
   if (m.t === 'host') { NET.hostOn = !!m.on; netStatus(); if (m.on) netHello(); return; }
   if (m.t === 'lobby') {
-    NET.lobby = m; NET.hostOn = true; netStatus();
+    NET.lobby = m; NET.hostOn = true; netStatus(); applyPortraits(); if (state) renderMats(withSeats(E.summary(state, BOARD)));
     if (!m.started && NET.inGame) phoneBackToLobby();
     renderPhoneLobby();
     if (m.started && !NET.inGame) netRequestSync();
@@ -2291,7 +2326,7 @@ function renderTvLobby() {
   $('lobbyCode').textContent = NET.code; $('lobbyUrl').textContent = joinURL().replace(/^https?:\/\//, '');
   const rows = NET.seats.map((s, i) => {
     const sw = `<span class="sw" style="background:${COLS[i]}"></span>`;
-    if (s && s.kind === 'phone') return `<div class="lseat">${sw}<b>${esc(s.name)}</b><span class="lst ${NET.online[s.id] ? 'on' : 'off'}">${NET.online[s.id] ? 'phone connected' : 'phone disconnected'}</span>${NET.started ? '' : `<button class="quiet lkick" data-seat="${i}">Remove</button>`}</div>`;
+    if (s && s.kind === 'phone') return `<div class="lseat">${s.photo ? `<img class="seatPic" src="${s.photo}" alt="" style="--pc:${COLS[i]}">` : sw}<b>${esc(s.name)}</b><span class="lst ${NET.online[s.id] ? 'on' : 'off'}">${NET.online[s.id] ? 'phone connected' : 'phone disconnected'}</span>${NET.started ? '' : `<button class="quiet lkick" data-seat="${i}">Remove</button>`}</div>`;
     return `<div class="lseat">${sw}<select data-seat="${i}" ${NET.started ? 'disabled' : ''}><option value="empty">Empty — waiting for a phone</option><option value="computer" ${s && s.kind === 'computer' ? 'selected' : ''}>Computer player</option></select></div>`;
   }).join('');
   $('lobbySeats').innerHTML = rows;
@@ -2310,7 +2345,8 @@ function renderPhoneLobby() {
   $('phoneSeats').innerHTML = (L ? L.seats : [0, 1, 2, 3].map(() => ({ kind: 'empty' }))).map((s, i) => {
     const taken = s.kind === 'phone' && s.id !== NET.id;
     const label = s.kind === 'phone' ? esc(s.name) + (s.id === NET.id ? ' (you)' : '') : s.kind === 'computer' ? esc(s.name) : 'Free seat';
-    return `<button class="pseat ${i === mineAt ? 'me' : ''}" data-seat="${i}" ${taken || NET.started ? 'disabled' : ''} style="--pc:${COLS[i]}"><span class="sw" style="background:${COLS[i]}"></span>${label}</button>`;
+    const pic = s.kind === 'phone' && s.photo ? `<img class="seatPic" src="${s.photo}" alt="">` : `<span class="sw" style="background:${COLS[i]}"></span>`;
+    return `<button class="pseat ${i === mineAt ? 'me' : ''}" data-seat="${i}" ${taken || NET.started ? 'disabled' : ''} style="--pc:${COLS[i]}">${pic}${label}</button>`;
   }).join('');
   $('phoneSeats').querySelectorAll('.pseat').forEach(b => b.onclick = () => { NET.wantSeat = +b.dataset.seat; lsSet('hotelPhoneName', cleanName($('phoneName').value)); netHello(); Sound.ui('click'); });
   const joined = mineAt >= 0, filled = L ? L.seats.filter(s => s.kind !== 'empty').length : 0;
@@ -2350,11 +2386,19 @@ function netInit() {
     if (!lsGet('hotelPhoneSound')) { lsSet('hotelPhoneSound', '1'); Sound.set('music', false); } // the TV plays the music
     lead.textContent = 'Your phone is your seat at the table: your view of the board, your money and your decisions.';
     const card = document.createElement('div'); card.className = 'card'; card.id = 'phoneLobby';
-    card.innerHTML = `<h2>Game <span id="phoneCode"></span></h2><label class="pname">Your name <input type="text" id="phoneName" maxlength="16" placeholder="Your name"></label><div class="note">Choose your colour</div><div id="phoneSeats" class="phoneSeats"></div><div class="row"><button class="primary" id="phoneJoin">Join the game</button><button id="phoneStart" class="hidden">Start game</button></div><p class="note" id="phoneNote"></p>`;
+    card.innerHTML = `<h2>Game <span id="phoneCode"></span></h2><label class="pname">Your name <input type="text" id="phoneName" maxlength="16" placeholder="Your name"></label><div class="photoRow"><div class="pPic empty" id="phonePic"></div><div class="photoBtns"><button id="phoneSnap">📷 Take a selfie</button><button id="phoneNoPic" class="quiet hidden">Remove photo</button><span class="note">Shown above your car on the TV. Optional.</span></div><input type="file" id="phoneFile" accept="image/*" capture="user" hidden></div><div class="note">Choose your colour</div><div id="phoneSeats" class="phoneSeats"></div><div class="row"><button class="primary" id="phoneJoin">Join the game</button><button id="phoneStart" class="hidden">Start game</button></div><p class="note" id="phoneNote"></p>`;
     $('seats').closest('.card').after(card);
     $('phoneName').value = lsGet('hotelPhoneName') || '';
     $('phoneJoin').onclick = () => { const n = cleanName($('phoneName').value); if (!n) { toast('Type your name first.', 'bad'); $('phoneName').focus(); return; } lsSet('hotelPhoneName', n); Sound.init(); netHello(); Sound.ui('click'); };
     $('phoneStart').onclick = () => { netSend({ t: 'start' }); Sound.ui('click'); };
+    $('phoneSnap').onclick = () => { Sound.init(); $('phoneFile').click(); };
+    $('phoneFile').onchange = async e => {
+      const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
+      try { const url = await photoFromFile(f); lsSet('hotelPhonePhoto', url); showOwnPhoto(); netHello(); Sound.ui('click'); }
+      catch (er) { toast('Could not use that photo — try again.', 'bad'); }
+    };
+    $('phoneNoPic').onclick = () => { try { localStorage.removeItem('hotelPhonePhoto'); } catch (er) {} showOwnPhoto(); netHello(); };
+    showOwnPhoto();
     $('startBtn').classList.add('hidden'); $('resumeBtn').classList.add('hidden'); $('claimMode').closest('label').classList.add('hidden');
     $('newBtn').classList.add('hidden');
     // the TV sets the sky for everyone

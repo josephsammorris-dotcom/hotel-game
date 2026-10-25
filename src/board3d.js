@@ -1192,6 +1192,52 @@ function createBoard3D(deps, container, board, scenery, opts) {
     return root;
   }
   const cars = scenery.playerColours.map((c, i) => { const m = carMesh(c); Object.assign(m.userData, { space: -1, i }); scene.add(m); placeCar(m, -1); return m; });
+
+  // ---------------------------------------------------------------- player portraits: a round photo badge over each car
+  // (TV + phones play). A ring in the player's colour; their initial when there's no photo. Always faces the camera,
+  // drawn on top so it can't hide behind a hotel, and grows with distance so it stays readable from the sofa.
+  const portraits = [null, null, null, null];
+  function badgeTexture(img, colour, letter) {
+    const S = 256, c = canvas(S, S), g = c.getContext('2d'), r = S / 2;
+    g.beginPath(); g.arc(r, r, r - 4, 0, Math.PI * 2); g.fillStyle = 'rgba(0,0,0,.35)'; g.fill(); // soft edge
+    g.beginPath(); g.arc(r, r, r - 10, 0, Math.PI * 2); g.fillStyle = colour; g.fill();
+    g.save(); g.beginPath(); g.arc(r, r, r - 30, 0, Math.PI * 2); g.clip();
+    if (img) { const w = img.width, h = img.height, k = Math.min(w, h); g.drawImage(img, (w - k) / 2, (h - k) / 2, k, k, 30, 30, S - 60, S - 60); }
+    else { g.fillStyle = '#f6f1e7'; g.fillRect(0, 0, S, S); g.fillStyle = colour; g.font = `700 120px ${FONT}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText((letter || '?').slice(0, 1).toUpperCase(), r, r + 6); }
+    g.restore();
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+  }
+  function setPortrait(i, photo, letter) {
+    const car = cars[i]; if (!car) return;
+    let p = portraits[i];
+    if (!photo && !letter) { if (p) { if (p.sprite) { car.remove(p.sprite); p.sprite.material.map.dispose(); p.sprite.material.dispose(); } portraits[i] = null; } return; }
+    const key = (photo || '') + '|' + (letter || '');
+    if (p && p.key === key) return;
+    const colour = scenery.playerColours[i];
+    const apply = img => {
+      if (portraits[i] && portraits[i].key !== key && portraits[i].pending !== key) return; // superseded meanwhile
+      const tex = badgeTexture(img, colour, letter);
+      let q = portraits[i];
+      if (!q || !q.sprite) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false, transparent: true }));
+        sp.renderOrder = 20; sp.position.set(0, 0.62, 0); sp.scale.setScalar(0.4); sp.userData.noSimple = true; car.add(sp);
+        q = portraits[i] = { sprite: sp, key };
+      } else { q.sprite.material.map.dispose(); q.sprite.material.map = tex; q.sprite.material.needsUpdate = true; q.key = key; }
+    };
+    if (p) p.pending = key; else portraits[i] = { sprite: null, key: null, pending: key };
+    if (photo) { const im = new Image(); im.onload = () => apply(im); im.onerror = () => apply(null); im.src = photo; } else apply(null);
+  }
+  const _pp = new THREE.Vector3();
+  function stepPortraits() {
+    for (let i = 0; i < 4; i++) {
+      const p = portraits[i]; if (!p || !p.sprite) continue;
+      const sp = p.sprite; sp.visible = cars[i].visible && !(driver && driver.i === i && !cutaway); // not in your own windscreen
+      if (!sp.visible) continue;
+      sp.getWorldPosition(_pp); const d = camera.position.distanceTo(_pp);
+      sp.scale.setScalar(Math.max(0.28, Math.min(0.75, d * 0.036)));
+      sp.position.y = 0.42 + sp.scale.x * 0.5; // sits just above the roof whatever its size
+    }
+  }
   function carPose(i, space) {
     if (space < 0) { const [x, y] = scenery.carPark.bays[i]; return { pos: new THREE.Vector3(wx(x), 0, wz(y)), yaw: -Math.PI / 2 }; }
     const f = spaceFrame(space); return { pos: new THREE.Vector3(f.p.x, ROAD_Y, f.p.z), yaw: Math.atan2(-f.tg.z, f.tg.x) };
@@ -2367,7 +2413,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
   document.addEventListener('visibilitychange', () => { clock.getDelta(); perf.win = 0; perf.n = 0; });
   function simulate(dt) {
     stepAnims(dt);
-    stepCars(dt);
+    stepCars(dt); stepPortraits();
     stepEnv(dt);
     stepFireworks(dt);
     if (farBlur) { const u = farBlur.uniforms, d = camera.position.distanceTo(controls.target); u.near.value = camera.near; u.far.value = camera.far; u.start.value = driver ? 9 : d + 12; u.end.value = driver ? 22 : d + 36; farBlur.enabled = !!(gtao && gtao.enabled); }
@@ -2412,7 +2458,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     _advance(sec) { for (let t = 0; t < sec; t += 1 / 30) simulate(1 / 30); }, // test hook: run the world forward without drawing
     onPerf(fn) { perf.cb = fn; notify(); }, ready, onContextLost(fn) { lostCb = fn; }, perfState: () => ({ mode: perf.mode, tier, profile: liteProfile ? 'lite' : 'full', pr: perf.pr, lite: perf.lite, ceil: perf.ceil, fps: perf.fps, idle: performance.now() > perf.busyUntil, n: perf.n, slow: perf.slow, fast: perf.fast, last: Math.round(perf.lastMs || 0) }),
     _applyProfile: applyProfile, setOptions, setSharpness, setTier, getOptions: () => Object.assign({ lite: liteProfile }, opt), _merged: () => merged.length, _ambK(k) { SIMPLE_AMB = k; }, _upkeep() { labUpkeep(performance.now()); }, _profileFrame() { const t0 = performance.now(); simulate(1 / 30); const t1 = performance.now(); labUpkeep(t1); busyNow(); const t2 = performance.now(); if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(1 / 30); const t3 = performance.now(); return { sim: t1 - t0, upkeep: t2 - t1, render: t3 - t2 }; }, _composer: composer, _renderOnce() { if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(0.016); },
-    getEnv, setTimeMode, setWeather, envState, followEnv, onEnv(fn) { env.listeners.push(fn); fn(getEnv()); },
+    getEnv, setTimeMode, setWeather, envState, followEnv, setPortrait, onEnv(fn) { env.listeners.push(fn); fn(getEnv()); },
     setInsetLeft(px) { insetLeft = px; resize(); },
     setCar(i, v) { if (cars[i]) cars[i].visible = !!v; },
     onPick(fn) { pickFn = fn; },
