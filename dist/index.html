@@ -4497,6 +4497,7 @@ const SAVE_KEY = 'hotel-game-save';
 const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let view = null, state = null, acting = false, fast = false, botTimer = null;
+let gameGen = 0; // bumped whenever a game is thrown away, so a move still animating from it stops instead of carrying on into the next
 // ---- multi-screen play. ?tv: this screen is the table (the referee: it checks moves and runs computer players).
 // ?join=CODE: this screen is one player's phone. Otherwise: pass-and-play on one screen, as before.
 const QS = new URLSearchParams(location.search);
@@ -4705,7 +4706,8 @@ $('resumeBtn').onclick = () => { state = loadGame(); if (state) { state.news = s
 $('newBtn').onclick = () => {
   clearTimeout(botTimer);
   try { localStorage.removeItem(NET.mode === 'host' ? TV_SAVE : SAVE_KEY); } catch (e) {}
-  if (NET.mode === 'host') { NET.started = false; NET.seq = 0; NET.inbox = []; setTimeout(lobbyChanged, 0); }
+  gameGen++; acting = false;
+  if (NET.mode === 'host') { NET.started = false; NET.seq = 0; NET.inbox = []; NET.snaps.clear(); NET.rebind = []; NET.handback = []; if (NET.takeover) NET.takeover.clear(); setTimeout(lobbyChanged, 0); }
   if (view.isDriverView()) setDriver(false);
   finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
   resetBoard(); hideDice(); hideSpinner(); hideLanded(); closeDeeds(); hideProposal(); proposalSeen = null;
@@ -4814,10 +4816,11 @@ function showBankNote(e) {
 }
 const celebrateBonus = {}; // hotel -> fireworks level owed (a free build from the spinner)
 async function sync3D(mover) {
+  const gen = gameGen;
   if (mover !== undefined) {
     const p = state.players.find(q => q.seat === mover);
     const to = p && p.active ? p.pos : -1;
-    if (to !== seen.cars[mover]) { seen.cars[mover] = to; await view.moveCar(mover, to, true); }
+    if (to !== seen.cars[mover]) { seen.cars[mover] = to; await view.moveCar(mover, to, true); if (gen !== gameGen || !state) return; }
     else if (p && !p.active) view.setCar(mover, false);
   }
   state.players.forEach(p => { const to = p.active ? p.pos : -1; if (to !== seen.cars[p.seat]) { seen.cars[p.seat] = to; view.moveCar(p.seat, to, true); if (!p.active) setTimeout(() => view.setCar(p.seat, false), 900); } });
@@ -4841,8 +4844,8 @@ async function sync3D(mover) {
   if (mover !== undefined) {
     const p = state.players.find(q => q.seat === mover);
     if (p && p.active && p.pos >= 0) view.flyTo({ space: p.pos });
-  } else if (newBuild) await view.showcase(newBuild, 4.8); // everyone watches it go up
-  else if (newEntrance) await view.showcase(newEntrance, 3.4, 3.2); // and sees where the new entrance went
+  } else if (newBuild) await view.showcase(newBuild, 4.8); if (gen !== gameGen || !state) return; // everyone watches it go up
+  else if (newEntrance) await view.showcase(newEntrance, 3.4, 3.2); if (gen !== gameGen || !state) return; // and sees where the new entrance went
   else if (changedHotel) view.flyTo(changedHotel);
 }
 
@@ -4877,6 +4880,7 @@ function stamp(title, sub) {
 }
 function pulseMat(seat) { const m = matFor(seat); if (!m) return; m.classList.remove('pulse'); void m.offsetWidth; m.classList.add('pulse'); }
 async function animateTransfers(ev) {
+  const gen = gameGen;
   for (const e of ev) {
     if (e.type === 'land' || e.type === 'auctionSold') {
       const buyer = state.players[e.player], colour = PCOL[buyer.seat];
@@ -4886,18 +4890,18 @@ async function animateTransfers(ev) {
         view.flyTo(e.hotel);
         if (forced) view.saleSign(e.hotel, colour);
         stamp(forced ? 'Compulsory purchase' : 'Sold at auction', forced ? `${buyer.name} forces ${seller.name} to sell the ${hname(e.hotel)} for ${fmt(price)}` : `${buyer.name} buys the ${hname(e.hotel)} from ${seller.name} for ${fmt(price)}`);
-        await wait(reduceMotion ? 0 : 750);
+        await wait(reduceMotion ? 0 : 750); if (gen !== gameGen || !state) return;
         view.setOwner(e.hotel, colour, true); seen.owners[e.hotel] = e.player;
         const fromMat = matFor(seller.seat), toMat = matFor(buyer.seat);
         const notes = billBreakdown(price).flatMap(([d, n]) => Array(Math.min(n, 3)).fill(d)).slice(0, 6);
         const flights = [fly(deedCardEl(e.hotel), centreOf(fromMat), centreOf(toMat), { ms: 1500, lift: 150, s1: 1.5, s2: 0.55 })];
         notes.forEach((d, k) => { const t = document.createElement('div'); t.innerHTML = noteHTML(d, 0, 'flyer'); const b = t.firstChild; flights.push(fly(b, centreOf(toMat), centreOf(fromMat), { ms: 1100, delay: 250 + k * 110, lift: 70, s1: 1.3, s2: 0.7 })); });
-        await Promise.all(flights);
+        await Promise.all(flights); if (gen !== gameGen || !state) return;
         pulseMat(buyer.seat); pulseMat(seller.seat);
-        await wait(reduceMotion ? 0 : 900);
+        await wait(reduceMotion ? 0 : 900); if (gen !== gameGen || !state) return;
       } else {
         view.setOwner(e.hotel, colour, true); seen.owners[e.hotel] = e.player;
-        await fly(deedCardEl(e.hotel), centreOf(null), centreOf(matFor(buyer.seat)), { ms: 1000, lift: 60, s1: 1.4, s2: 0.55 });
+        await fly(deedCardEl(e.hotel), centreOf(null), centreOf(matFor(buyer.seat)), { ms: 1000, lift: 60, s1: 1.4, s2: 0.55 }); if (gen !== gameGen || !state) return;
         pulseMat(buyer.seat);
       }
     } else if (e.type === 'demolished') { view.setOwner(e.hotel, null, true); seen.owners[e.hotel] = null; if (e.bank && e.from !== undefined) stamp('Bought by the Bank', `No bids — the Bank pays ${state.players[e.from].name} ${fmt(e.amount)} and knocks the ${hname(e.hotel)} down`); }
@@ -5014,7 +5018,7 @@ async function runAction(a) {
   if (acting || !state || state.winner !== null) return;
   if (a.type === '_setAI') return setAI(a);
   if (a.type === '_phone') return setPhone(a);
-  acting = true;
+  acting = true; const gen = gameGen;
   if (NET.mode === 'host') netSend({ t: 'act', seq: NET.seq, a });
   const actor = state.players[a.player], moverSeat = actor ? actor.seat : undefined;
   const isRoll = a.type === 'roll', isStay = a.type === 'rollStay', isSpin = a.type === 'spin';
@@ -5026,20 +5030,20 @@ async function runAction(a) {
   if (isStay || isSpin) pinLanded();
   closeDeeds();
   render();
-  if (isRoll || isStay) await wait(reduceMotion ? 0 : 700);
-  if (isSpin) await wait(reduceMotion ? 0 : 150);
+  if (isRoll || isStay) await wait(reduceMotion ? 0 : 700); if (gen !== gameGen) return;
+  if (isSpin) await wait(reduceMotion ? 0 : 150); if (gen !== gameGen) return;
   let ev;
   try { ev = E.apply(state, BOARD, a); NET.seq++; } catch (err) { if (isRoll || isStay) hideDice(); if (isSpin) hideSpinner(); console.error(err); acting = false; if (NET.mode === 'player') netRequestSync(); render(); tick(); return; }
   if (isRoll) { const mv = ev.find(e => e.type === 'move'); if (mv) settleDice(mv.roll, `<span class="sw" style="background:${COLS[moverSeat]}"></span>${esc(actor.name)} rolls <b>${mv.roll}</b>${mv.roll === 6 ? ' · extra turn' : ''}`); }
-  if (isStay) { const st = ev.find(e => e.type === 'stay'); if (st) settleStay(st); if (st) settleDice(st.nights, `${st.nights} night${st.nights > 1 ? 's' : ''} · <b>${fmt(st.amount)}</b> to ${esc(pname(st.to))}`); await wait(reduceMotion ? 0 : 2400); hideDice(); hideStay(); }
-  if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result); await wait(reduceMotion ? 300 : 1300); hideSpinner(); }
+  if (isStay) { const st = ev.find(e => e.type === 'stay'); if (st) settleStay(st); if (st) settleDice(st.nights, `${st.nights} night${st.nights > 1 ? 's' : ''} · <b>${fmt(st.amount)}</b> to ${esc(pname(st.to))}`); await wait(reduceMotion ? 0 : 2400); if (gen !== gameGen) return; hideDice(); hideStay(); }
+  if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result); if (gen !== gameGen) return; await wait(reduceMotion ? 300 : 1300); if (gen !== gameGen) return; hideSpinner(); }
   addStories(storiesFrom(ev, ctx));
   saveGame();
   const winEv = ev.find(e => e.type === 'win'); if (winEv) { setTimeout(() => finale(winEv.player), 1200); renderRejoin(); }
   if (isRoll) {
-    await wait(reduceMotion ? 0 : 650);
+    await wait(reduceMotion ? 0 : 650); if (gen !== gameGen) return;
     $('dice').classList.add('aside'); // tuck the die away so the drive can be seen
-    await sync3D(moverSeat);
+    await sync3D(moverSeat); if (gen !== gameGen) return;
     hideDice();
     const mv = ev.find(e => e.type === 'move');
     if (mv && actor.active) {
@@ -5049,10 +5053,10 @@ async function runAction(a) {
       if (t === 'freeEntrance' && nextActs.some(x => x.type === 'placeEntrance')) view.fireworks({ space: mv.to }, 1);
       if (t === 'freeBuild' && nextActs.some(x => x.type === 'freeBuild')) view.fireworks({ space: mv.to }, 2);
     }
-  } else await sync3D(undefined);
+  } else await sync3D(undefined); if (gen !== gameGen) return;
   ev.filter(e => e.type === 'bank').forEach(showBankNote);
   eventSounds(ev);
-  await animateTransfers(ev);
+  await animateTransfers(ev); if (gen !== gameGen) return;
   syncOwners(true);
   acting = false;
   render();
@@ -6078,6 +6082,7 @@ function renderRejoinPick() {
   $('rejoinWatch').onclick = () => { renderRejoinPick.dismissed = true; box.classList.add('hidden'); };
 }
 function phoneBackToLobby() {
+  gameGen++; acting = false; NET.pendingSnap = null; NET.waiting = false; clearTimeout(NET.waitT);
   NET.inGame = false; NET.started = false; NET.q = []; NET.me = null;
   if (view.isDriverView()) setDriver(false);
   finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
@@ -6245,7 +6250,7 @@ function joinCode() {
 async function toMenu() {
   if (NET.mode !== 'local') { const ok = !state || state.winner !== null || await confirmBox('Leave this game?', NET.mode === 'host' ? 'The game is saved on this screen and carries on when you open the TV page again.' : 'You can rejoin your seat by scanning the code on the TV again.', 'Leave'); if (ok) location.href = baseURL(); return; }
   if (state && state.winner === null && !(await confirmBox('Back to the main menu?', 'Your game is saved: pick <b>Continue saved game</b> to carry on.', 'Main menu'))) return;
-  clearTimeout(botTimer);
+  clearTimeout(botTimer); gameGen++; acting = false;
   if (view.isDriverView()) setDriver(false);
   finaleDone = false; finaleToken++; Sound.victory(false); $('winBanner').classList.add('hidden'); hideStay();
   resetBoard(); hideDice(); hideSpinner(); hideLanded(); closeDeeds(); hideProposal(); proposalSeen = null;
