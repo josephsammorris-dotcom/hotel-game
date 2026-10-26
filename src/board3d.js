@@ -177,6 +177,28 @@ function createBoard3D(deps, container, board, scenery, opts) {
 
   // ---------------------------------------------------------------- facade textures (one tile = one bay × one floor)
   // `lit` draws the windows (white on black): it becomes the emissive map, so windows glow after dark.
+  // Thatch: on the roof the texture's x runs from ridge to eave, so straws are drawn along x; the bundles' lower
+  // edges are shaded bands across y. A grey copy drives the bump map so the straw catches the light.
+  function thatchTex() {
+    const S = 256, c = canvas(S, S), g = c.getContext('2d');
+    g.fillStyle = '#5d3d27'; g.fillRect(0, 0, S, S);
+    const cols = ['#7b5233', '#8c6240', '#4a2f1d', '#a07448', '#6a4529', '#3c2516', '#94683f'];
+    for (let i = 0; i < 4200; i++) {
+      const x = rnd() * S, y = rnd() * S, len = 10 + rnd() * 26, a = (rnd() - 0.5) * 0.18;
+      g.strokeStyle = cols[Math.floor(rnd() * cols.length)]; g.globalAlpha = 0.45 + rnd() * 0.5; g.lineWidth = 0.8 + rnd() * 1.4;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); g.stroke();
+    }
+    g.globalAlpha = 1;
+    for (let x = 0; x < S; x += 64) { // each row of bundles ends in a shadowed lip
+      const gr = g.createLinearGradient(x + 40, 0, x + 64, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.8, 'rgba(20,10,4,.38)'); gr.addColorStop(1, 'rgba(255,220,160,.18)');
+      g.fillStyle = gr; g.fillRect(x + 40, 0, 24, S);
+    }
+    const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.anisotropy = maxAniso;
+    const bc = canvas(S, S), bg = bc.getContext('2d'); bg.filter = 'grayscale(1) contrast(1.6)'; bg.drawImage(c, 0, 0);
+    const bump = new THREE.CanvasTexture(bc); bump.wrapS = bump.wrapT = THREE.RepeatWrapping;
+    map.repeat.set(6, 3); bump.repeat.set(6, 3);
+    return { map, bump };
+  }
   function facade(draw, w = 128, h = 128, lit) {
     const c = canvas(w, h); draw(c.getContext('2d'), w, h); const t = tex(c, true);
     if (lit) { const m = canvas(w, h), g = m.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, w, h); g.fillStyle = '#fff'; lit(g, w, h); t.userData.lit = tex(m, true); }
@@ -191,7 +213,20 @@ function createBoard3D(deps, container, board, scenery, opts) {
     wood: facade((g, w, h) => { g.fillStyle = '#b27d4d'; g.fillRect(0, 0, w, h); g.strokeStyle = 'rgba(60,35,15,.35)'; for (let x = 0; x < w; x += 12) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); } g.fillStyle = '#3d2a1c'; g.fillRect(40, 34, 48, 44); g.fillStyle = '#f0d9a0'; g.fillRect(46, 40, 16, 32); g.fillRect(66, 40, 16, 32); }, 128, 128, (g) => { g.fillRect(46, 40, 16, 32); g.fillRect(66, 40, 16, 32); }),
     boom: facade((g, w, h) => { g.fillStyle = '#f1e8d2'; g.fillRect(0, 0, w, h); g.fillStyle = '#6a7f86'; g.fillRect(0, 30, w, 50); g.fillStyle = '#a9c4cc'; g.fillRect(0, 30, w, 14); g.strokeStyle = '#fbf7ee'; g.lineWidth = 4; for (let x = 4; x < w; x += 12) { g.beginPath(); g.moveTo(x, 80); g.lineTo(x, 104); g.stroke(); } g.fillStyle = '#fbf7ee'; g.fillRect(0, 78, w, 6); }, 128, 128, (g, w) => { g.fillRect(0, 44, w, 34); }),
     slate: facade((g, w, h) => { g.fillStyle = '#5c646a'; g.fillRect(0, 0, w, h); g.fillStyle = '#39414a'; g.fillRect(40, 30, 48, 70); g.fillStyle = '#8fa4b2'; g.fillRect(46, 36, 36, 58); }, 128, 128, (g) => { g.fillRect(46, 36, 36, 58); }),
-    hutWall: facade((g, w, h) => { g.fillStyle = '#d7b98a'; g.fillRect(0, 0, w, h); g.fillStyle = '#5b3f2a'; g.fillRect(30, 20, 26, 80); g.fillRect(74, 30, 30, 40); }, 128, 128, (g) => { g.fillRect(74, 30, 30, 40); })
+    hutWall: facade((g, w, h) => {
+      g.fillStyle = '#a3c63f'; g.fillRect(0, 0, w, h);                                                       // lime planks
+      g.fillStyle = 'rgba(70,95,20,.28)'; for (let y = 6; y < h; y += 9) g.fillRect(0, y, w, 1.5);
+      g.fillStyle = 'rgba(255,255,220,.12)'; for (let y = 2; y < h; y += 9) g.fillRect(0, y, w, 1);
+      const beam = '#c9772f', dark = '#8a4a1c';
+      g.fillStyle = beam; g.fillRect(0, 0, 9, h); g.fillRect(w - 9, 0, 9, h); g.fillRect(0, 0, w, 22); g.fillRect(0, h - 10, w, 10); g.fillRect(0, 82, w, 7); // posts, eave board, rails
+      g.fillStyle = dark; g.fillRect(8, 0, 1.5, h); g.fillRect(w - 10, 0, 1.5, h); g.fillRect(0, 88, w, 1.5); g.fillRect(0, 21, w, 1.5);
+      g.strokeStyle = beam; g.lineWidth = 6; g.beginPath(); g.moveTo(12, h - 12); g.lineTo(w / 2, 92); g.lineTo(w - 12, h - 12); g.stroke(); // braces under the window
+      g.fillStyle = '#f4f1e8'; g.fillRect(26, 30, 76, 50);                                                // window frame
+      g.fillStyle = '#bcd3dc'; g.fillRect(31, 35, 66, 40);
+      const gl = g.createLinearGradient(31, 35, 97, 75); gl.addColorStop(0, 'rgba(255,255,255,.55)'); gl.addColorStop(.5, 'rgba(255,255,255,0)'); g.fillStyle = gl; g.fillRect(31, 35, 66, 40);
+      g.fillStyle = '#f4f1e8'; g.fillRect(62, 35, 4, 40); g.fillRect(31, 53, 66, 4);                    // glazing bars
+      g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(26, 80, 76, 3);
+    }, 128, 128, (g) => { g.fillRect(31, 35, 66, 40); }),
   };
   const M = {
     royal: [plastic('#fff', { map: FAC.royal }), plastic('#d7c498')],
@@ -202,7 +237,9 @@ function createBoard3D(deps, container, board, scenery, opts) {
     brick: plastic('#fff', { map: FAC.brick, clearcoat: 0.2 }), mansard: plastic('#3a4047'), mansardTop: plastic('#2f343a'),
     taj: plastic('#fff', { map: FAC.taj }), tajPlain: plastic('#f3ead8'), tajTrim: plastic('#e2d4ba'), gold: plastic('#d8b25a', { metalness: 0.6, roughness: 0.3 }),
     wood: plastic('#fff', { map: FAC.wood, clearcoat: 0.1 }), lodgeRoof: plastic('#4a3226', { roughness: 0.45 }),
-    hutRoof: plastic('#fff', { roughness: 0.32, map: facade((g, w, h) => { g.fillStyle = '#56392b'; g.fillRect(0, 0, w, h); g.fillStyle = '#462e22'; for (let y = 0; y < h; y += 8) g.fillRect(0, y, w, 3); }, 64, 64) }), hutWall: plastic('#fff', { map: FAC.hutWall }),
+    hutRoof: (() => { const t = thatchTex(); return new THREE.MeshStandardMaterial({ color: '#fff', map: t.map, bumpMap: t.bump, bumpScale: 2.2, roughness: 0.95 }); })(),
+    hutWall: plastic('#fff', { map: FAC.hutWall, roughness: 0.6, clearcoat: 0.1 }),
+    hutStilt: matte('#4a2f20', { roughness: 0.9 }), hutRidge: matte('#4b3020', { roughness: 0.95 }), hutDoor: plastic('#3f8f45', { roughness: 0.5, clearcoat: 0.2 }), hutTrim: plastic('#f4f1e8', { roughness: 0.5, clearcoat: 0.2 }),
     boom: plastic('#fff', { map: FAC.boom }), boomRoof: plastic('#f7f0e0'),
     slate: plastic('#fff', { map: FAC.slate }), slateDark: plastic('#3b4146'), stone: plastic('#cfd2cc'),
     entrance: plastic('#d3322b', { roughness: 0.3, clearcoat: 0.8 }),
@@ -578,13 +615,57 @@ function createBoard3D(deps, container, board, scenery, opts) {
       const deck = new THREE.Mesh(new THREE.BoxGeometry(w * 0.3, 0.05, 0.14), M.lodgeRoof); deck.position.set(0, 0.025, -d / 2 - 0.02); gp.add(deck);
       return gp;
     },
+    // A thatched "loaf" roof: a capsule along x, cut flat underneath, sized in place. Its texture is laid out by hand:
+    // x runs down the slope from the ridge (the straw), y runs round the eave (across the bundle rows), everywhere
+    // including the rounded ends. Returns the roof and a ridge roll that covers the seam along the top.
+    thatchRoof(len, dep, rise, eave) {
+      const r = 0.5, L = 0.5, cap = new THREE.CapsuleGeometry(r, 2 * L, 10, 36); cap.rotateZ(Math.PI / 2);
+      const pos = cap.attributes.position, uv = cap.attributes.uv, sx = len / (2 * (L + r)), sy = rise / r, sz = dep / (2 * r);
+      const cut = -eave / sy, arc = Math.PI * r * (sx + sz) / 2, per = 4 * L * sx + 2 * arc;
+      const tile = 0.16, vTile = per / Math.max(1, Math.round(per * 3 / tile)) * 3; // a whole number of rows round the eave: no seam
+      for (let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i), y = Math.max(pos.getY(i), cut), z = pos.getZ(i);
+        const cx = Math.max(-L, Math.min(L, x)), qx = x - cx, h = Math.hypot(qx, z), e = Math.atan2(Math.max(y, 0), h);
+        const down = (Math.PI / 2 - e) * r * (sy + sz) / 2 + Math.max(0, -y) * sy;
+        const phi = Math.atan2(z, qx); let sPer;
+        if (Math.abs(qx) < 1e-6) sPer = z >= 0 ? (L - x) * sx : 2 * L * sx + arc + (x + L) * sx;
+        else if (qx < 0) { const a = phi > 0 ? phi - Math.PI / 2 : phi + 1.5 * Math.PI; sPer = 2 * L * sx + a / Math.PI * arc; }
+        else { const a = phi < -Math.PI / 2 ? phi + 2.5 * Math.PI : phi + Math.PI / 2; sPer = 4 * L * sx + arc + a / Math.PI * arc; }
+        pos.setXYZ(i, x * sx, y * sy, z * sz); uv.setXY(i, down / tile, sPer / vTile);
+      }
+      cap.computeVertexNormals();
+      // where the rows meet themselves round the eave, a triangle would stretch the whole texture: un-share those
+      // corners and lift the low ones a full lap (seamless, as a lap is a whole number of rows)
+      const geo = cap.toNonIndexed(), u2 = geo.attributes.uv, lap = per / vTile;
+      for (let i = 0; i < u2.count; i += 3) {
+        const v = [u2.getY(i), u2.getY(i + 1), u2.getY(i + 2)];
+        if (Math.max(...v) - Math.min(...v) > lap / 2) for (let k = 0; k < 3; k++) if (v[k] < lap / 2) u2.setY(i + k, v[k] + lap);
+      }
+      const roof = new THREE.Mesh(geo, M.hutRoof);
+      const ridgeG = new THREE.CapsuleGeometry(0.028, Math.max(0.05, len - dep * 0.55), 4, 10); ridgeG.rotateZ(Math.PI / 2);
+      const ridge = new THREE.Mesh(ridgeG, M.hutRidge); ridge.position.y = rise - 0.012;
+      return [roof, ridge];
+    },
     hut(p) {
-      const w = px(p.w), d = px(p.d), gp = new THREE.Group();
-      const wall = new THREE.Mesh(facadeBox(w * 0.86, 0.24, d * 0.74, 0.2, 0.24), M.hutWall); wall.position.y = 0.12; gp.add(wall);
-      const cap = new THREE.CapsuleGeometry(d / 2, w - d, 6, 20); cap.rotateZ(Math.PI / 2);
-      const roof = new THREE.Mesh(cap, M.hutRoof); roof.scale.set(1.04, 0.62, 1.12); roof.position.y = 0.24; gp.add(roof);
-      const ridge = new THREE.Mesh(new THREE.BoxGeometry(w - d * 0.9, 0.03, 0.05), M.hutRoof); ridge.position.y = 0.24 + d * 0.31; gp.add(ridge);
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.14, 0.14), M.hutRoof); post.position.set(w / 2 + 0.02, 0.07, 0); gp.add(post);
+      // a Waikiki beach hut: on stilts, lime-and-timber walls, a thick rounded thatched roof; the big one is the lodge
+      const w = px(p.w), d = px(p.d), gp = new THREE.Group(), lodge = p.w > 70;
+      const base = 0.075, wallH = lodge ? 0.27 : 0.21, ww = w * 0.8, wd = d * 0.62;
+      // stilts and deck
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(ww + 0.07, 0.03, wd + 0.07), M.hutStilt); deck.position.y = base - 0.015; gp.add(deck);
+      const postG = new THREE.BoxGeometry(0.035, base - 0.03, 0.035);
+      for (const fx of [-0.46, 0, 0.46]) for (const fz of [-0.46, 0.46]) { const post = new THREE.Mesh(postG, M.hutStilt); post.position.set(fx * (ww + 0.04), (base - 0.03) / 2, fz * (wd + 0.04)); gp.add(post); }
+      // walls: windows all round
+      const walls = new THREE.Mesh(facadeBox(ww, wallH, wd, 0.3, wallH), M.hutWall); walls.position.y = base + wallH / 2; gp.add(walls);
+      // the lodge has a green door at its end, with a white frame
+      if (lodge) {
+        const fr = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.19, 0.12), M.hutTrim); fr.position.set(ww / 2 + 0.004, base + 0.095, 0); gp.add(fr);
+        const dr = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.17, 0.095), M.hutDoor); dr.position.set(ww / 2 + 0.008, base + 0.085, 0); gp.add(dr);
+      }
+      // steps down from the deck at one end
+      for (let k = 0; k < 3; k++) { const st = new THREE.Mesh(new THREE.BoxGeometry(0.045, base * (1 - k / 3), 0.11), M.hutStilt); st.position.set(ww / 2 + 0.06 + k * 0.04, base * (1 - k / 3) / 2, lodge ? 0 : wd / 2 - 0.06); gp.add(st); }
+      // the roof: a rounded loaf of thatch with a deep overhang all round and a thick eave
+      const [roof, ridge] = STYLE.thatchRoof(ww + 0.2, wd + 0.18, lodge ? 0.17 : 0.145, 0.03);
+      roof.position.y = ridge.position.y = 0; const rg = new THREE.Group(); rg.add(roof, ridge); rg.position.y = base + wallH + 0.012; gp.add(rg);
       return gp;
     },
     crescent(p) {
@@ -2172,11 +2253,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
       m.position.set(c.x + Math.min(0.25, sz.y * 0.12), box.min.y + 0.006, c.z + Math.min(0.2, sz.y * 0.09)); m.scale.set(sz.x * 1.3 + 0.1, 1, sz.z * 1.3 + 0.1);
       scene.add(m); blobs.push({ m, obj });
     }
-    for (const car of cars) {
-      const r = car.rotation.y; car.rotation.y = 0; car.updateMatrixWorld(true); box.makeEmpty(); box.expandByObject(car); car.rotation.y = r; car.updateMatrixWorld(true);
-      box.getSize(sz); const m = new THREE.Mesh(blobGeo, blobMat); m.userData.noSimple = true; m.renderOrder = 1;
-      m.position.set(0, box.min.y - car.position.y + 0.004, 0); m.scale.set(sz.x * 1.25, 1, sz.z * 1.25); car.add(m); blobs.push({ m, obj: car });
-    }
+    // (no painted shadow under the cars: on the Low setting they read better without one)
   }
   function applyBlobs(on) {
     if (on && !blobs) buildBlobs();
