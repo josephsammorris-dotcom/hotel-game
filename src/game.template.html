@@ -66,6 +66,22 @@ input[type=text],input[type=number],select{font:inherit;color:var(--ink);backgro
 .note{font-size:.76rem;color:var(--muted)}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font:600 1rem "Barlow Condensed",sans-serif;letter-spacing:.05em;opacity:0;transition:opacity .3s;pointer-events:none;white-space:nowrap;z-index:4}
 #toast.show{opacity:1}
+/* passing the Bank: a gold banner every screen sees */
+#bankNote{position:fixed;left:50%;top:calc(18% + env(safe-area-inset-top,0px));transform:translate(-50%,-14px) scale(.92);display:flex;align-items:center;gap:14px;padding:10px 22px 10px 12px;border-radius:999px;background:linear-gradient(180deg,#ffe28a,#e0a92e 55%,#b9821b);color:#2b1c05;box-shadow:0 10px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.7),0 0 0 3px rgba(255,236,170,.35);opacity:0;pointer-events:none;z-index:12;transition:opacity .35s,transform .45s cubic-bezier(.2,1.6,.4,1);white-space:nowrap}
+#bankNote.show{opacity:1;transform:translate(-50%,0) scale(1)}
+#bankNote .bnPic{width:46px;height:46px;border-radius:50%;flex:none;background:#2a2622 center/cover no-repeat;box-shadow:0 0 0 3px var(--pc,#fff);display:grid;place-items:center;font:700 1.4rem "Barlow Condensed",sans-serif;color:#fff}
+#bankNote .bnAmt{font:800 2rem/1 "Barlow Condensed",sans-serif;letter-spacing:.02em}
+#bankNote .bnTxt{font:600 1rem/1.15 "Barlow Condensed",sans-serif;letter-spacing:.04em;text-transform:uppercase;opacity:.85}
+/* the TV, when a phone drops out mid-game: scan to rejoin */
+#rejoinCard{position:fixed;right:calc(16px + env(safe-area-inset-right,0px));bottom:calc(84px + env(safe-area-inset-bottom,0px));display:flex;gap:12px;align-items:center;max-width:360px;padding:12px;border-radius:16px;background:var(--glass);backdrop-filter:blur(10px);border:1px solid var(--line);box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:5}
+#rejoinCard .qr{width:118px;height:118px;flex:none;background:#fff;border-radius:8px;padding:4px}
+#rejoinCard .qr svg{width:100%;height:100%;display:block}
+#rejoinCard b{display:block;font:700 1.15rem "Barlow Condensed",sans-serif;color:var(--gold)}
+#rejoinCard .rjCode{font:700 1.5rem "Barlow Condensed",sans-serif;letter-spacing:.18em}
+/* a phone that isn't anyone's seat yet, mid-game: pick who you were */
+#rejoinPick{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(92vw,360px);padding:16px;border-radius:16px;background:var(--glass);backdrop-filter:blur(12px);border:1px solid var(--line);box-shadow:0 14px 40px rgba(0,0,0,.5);z-index:7}
+#rejoinPick h2{margin:0 0 6px}#rejoinPick .rpList{display:grid;gap:8px;margin:10px 0}
+#rejoinPick .pseat{display:flex;align-items:center;gap:10px;justify-content:flex-start}
 #toggle{display:none}
 .hidden{display:none !important}
 #botFeed{position:fixed;z-index:4;top:calc(var(--barH) + 22px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px;pointer-events:none;width:min(560px,calc(100vw - 24px))}
@@ -391,7 +407,7 @@ input[type=text],input[type=number],select{font:inherit;color:var(--ink);backgro
   #camDock button{width:36px;height:36px}
   .camHint{display:none}
 }
-@media (prefers-reduced-motion:reduce){#loading,#toast{transition:none}.die,.dial,.halo,.landedCard{animation:none !important}}
+@media (prefers-reduced-motion:reduce){#loading,#toast,#bankNote{transition:none}.die,.dial,.halo,.landedCard{animation:none !important}}
 
 /* Table options fold away during a game */
 .tableCard summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between}
@@ -713,6 +729,9 @@ body.lite #title .tBig,body.lite .tPane{background:rgba(28,26,24,.93)}
 
 <div id="scoreBar" class="hidden" aria-label="Players' money and properties"></div>
 <div id="toast" role="status"></div>
+<div id="bankNote" role="status" aria-live="polite"></div>
+<div id="rejoinCard" class="hidden"><div class="qr" id="rejoinQR"></div><div><b id="rejoinWho"></b><div class="note">Scan to rejoin, or go to <span id="rejoinUrl"></span></div><div class="rjCode" id="rejoinCode"></div></div></div>
+<div id="rejoinPick" class="hidden"><h2>Rejoin the game</h2><p class="note">A game is under way. If you were playing, tap your name to pick up where you left off.</p><div class="rpList" id="rejoinList"></div><button class="quiet" id="rejoinWatch">Just watch</button></div>
 <div id="botFeed" aria-live="polite"></div>
 <div id="stayCard" class="hidden" aria-live="assertive"></div>
 <div id="winBanner" class="hidden" role="dialog" aria-label="Game over"></div>
@@ -850,7 +869,7 @@ let view = null, state = null, acting = false, fast = false, botTimer = null;
 // ?join=CODE: this screen is one player's phone. Otherwise: pass-and-play on one screen, as before.
 const QS = new URLSearchParams(location.search);
 const NET = { mode: QS.has('tv') ? 'host' : QS.get('join') ? 'player' : 'local', code: null, id: null, ws: null, open: false, seq: 0, me: null,
-  q: [], inbox: [], snaps: new Set(), stats: { nack: 0, snap: 0, sent: 0 }, seats: [null, null, null, null], online: {}, hostOn: false, waiting: false, started: false, lastBuzz: null };
+  q: [], inbox: [], snaps: new Set(), rebind: [], stats: { nack: 0, snap: 0, sent: 0 }, seats: [null, null, null, null], online: {}, hostOn: false, waiting: false, started: false, lastBuzz: null };
 // does this screen control player p? (pass-and-play: every human; a phone: only its own player; the TV: nobody)
 const mine = p => !!p && !p.ai && (NET.mode === 'local' || (NET.mode === 'player' && p.id === NET.me));
 let seen = null; // last-synced snapshot of what the 3D board is showing
@@ -1111,7 +1130,7 @@ function resetBoard() {
 const freshSeen = () => ({ entrances: {}, hotels: Object.fromEntries(HOTELS.map(id => [id, { built: 0, facilities: false }])), cars: [-1, -1, -1, -1], owners: Object.fromEntries(HOTELS.map(id => [id, null])) });
 
 function beginGame() {
-  setTimeout(applyPortraits, 0);
+  setTimeout(applyPortraits, 0); setTimeout(renderRejoin, 0);
   $('setupPanel').classList.add('hidden'); $('gamePanel').classList.remove('hidden');
   $('camDock').classList.remove('hidden'); // the news TV is retired: the menu lives in its corner now
   showCamHint();
@@ -1151,6 +1170,15 @@ function eventSounds(ev) {
     case 'bankrupt': at(() => Sound.play('bankrupt'), d); d += 2500; break;
     case 'win': at(() => Sound.play('win'), d); break;
   }
+}
+// "+2,000": shown on every screen when someone passes (or claims) the Bank
+function showBankNote(e) {
+  const p = state.players[e.player]; if (!p) return;
+  const el = $('bankNote'), pic = seatPhoto(p.seat), me = NET.mode === 'player' && p.id === NET.me;
+  el.innerHTML = `<span class="bnPic" style="--pc:${COLS[p.seat]};${pic ? `background-image:url(${pic})` : `background:${COLS[p.seat]}`}">${pic ? '' : esc((p.name || '?')[0].toUpperCase())}</span><span><div class="bnAmt">+${fmt(2000)}</div><div class="bnTxt">${me ? 'You pass' : esc(p.name) + ' passes'} the Bank</div></span>`;
+  el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+  if (me && navigator.vibrate) try { navigator.vibrate([40, 60, 40]); } catch (er) {}
+  clearTimeout(showBankNote.h); showBankNote.h = setTimeout(() => el.classList.remove('show'), 3400);
 }
 const celebrateBonus = {}; // hotel -> fireworks level owed (a free build from the spinner)
 async function sync3D(mover) {
@@ -1351,6 +1379,7 @@ function doAction(a) {
 async function runAction(a) {
   if (acting || !state || state.winner !== null) return;
   if (a.type === '_setAI') return setAI(a);
+  if (a.type === '_phone') return setPhone(a);
   acting = true;
   if (NET.mode === 'host') netSend({ t: 'act', seq: NET.seq, a });
   const actor = state.players[a.player], moverSeat = actor ? actor.seat : undefined;
@@ -1372,7 +1401,7 @@ async function runAction(a) {
   if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result); await wait(reduceMotion ? 300 : 1300); hideSpinner(); }
   addStories(storiesFrom(ev, ctx));
   saveGame();
-  const winEv = ev.find(e => e.type === 'win'); if (winEv) setTimeout(() => finale(winEv.player), 1200);
+  const winEv = ev.find(e => e.type === 'win'); if (winEv) { setTimeout(() => finale(winEv.player), 1200); renderRejoin(); }
   if (isRoll) {
     await wait(reduceMotion ? 0 : 650);
     $('dice').classList.add('aside'); // tuck the die away so the drive can be seen
@@ -1387,6 +1416,7 @@ async function runAction(a) {
       if (t === 'freeBuild' && nextActs.some(x => x.type === 'freeBuild')) view.fireworks({ space: mv.to }, 2);
     }
   } else await sync3D(undefined);
+  ev.filter(e => e.type === 'bank').forEach(showBankNote);
   eventSounds(ev);
   await animateTransfers(ev);
   syncOwners(true);
@@ -1394,6 +1424,16 @@ async function runAction(a) {
   render();
   tick();
   netPump();
+}
+// a player carrying on from another phone (or another browser on the same one): part of the move stream too
+function setPhone(a) {
+  if (NET.mode === 'host') netSend({ t: 'act', seq: NET.seq, a });
+  state.players[a.player].phone = a.phone; NET.seq++;
+  if (NET.mode === 'player') {
+    const was = NET.me; NET.me = state.players.findIndex(p => p.phone === NET.id); if (NET.me < 0) NET.me = null;
+    if (NET.me !== null && was === null) { $('rejoinPick').classList.add('hidden'); setTimeout(() => { if (state && !view.isDriverView()) setDriver(true); }, 400); }
+  }
+  saveGame(); renderRejoin(); render(); tick(); netPump();
 }
 // a computer taking over a player (e.g. their phone has gone), or handing back: part of the move stream, so every screen agrees
 function setAI(a) {
@@ -2108,7 +2148,7 @@ async function start() {
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
   netInit(); titleInit();
-  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale };
+  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale, showBankNote, get acting() { return acting; } };
   // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
   ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
@@ -2160,7 +2200,19 @@ function netStatus(text) {
 function lobbyMsg() {
   return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, photo: s.photo || null, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
 }
-function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); applyPortraits(); if (state) render(); }
+function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); applyPortraits(); renderRejoin(); if (state) render(); }
+// the TV: while any player's phone is away mid-game, a QR code in the corner to bring it back
+let rejoinQR = null;
+function renderRejoin() {
+  const card = $('rejoinCard'); if (!card) return;
+  const gone = NET.mode === 'host' && NET.started && state && state.winner === null ? state.players.filter(p => p.active && p.phone && !NET.online[p.phone]) : [];
+  card.classList.toggle('hidden', !gone.length);
+  if (!gone.length) return;
+  const names = gone.map(p => p.name);
+  $('rejoinWho').textContent = `${names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + '\u2019s phones have' : names[0] + '\u2019s phone has'} disconnected`;
+  $('rejoinUrl').textContent = joinURL().replace(/^https?:\/\//, '').replace(/\?join=.*/, ''); $('rejoinCode').textContent = NET.code;
+  if (!rejoinQR) { rejoinQR = 'loading'; loadQR().then(q => { if (!q) { $('rejoinQR').classList.add('hidden'); return; } const qr = q(0, 'M'); qr.addData(joinURL()); qr.make(); rejoinQR = qr.createSvgTag({ cellSize: 4, margin: 1, scalable: true }); $('rejoinQR').innerHTML = rejoinQR; }); }
+}
 // a phone's selfie: a small square JPEG data URL, checked before it's kept or passed on
 const okPhoto = x => typeof x === 'string' && x.length < 60000 && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x);
 // the sky (weather + time of day) is the TV's: sent with every snapshot, every few seconds, and whenever it changes
@@ -2186,6 +2238,15 @@ function seatPhone(id, x) {
   if (NET.started) { // mid-game: rejoining players get a snapshot via 'join'; a returning player can still update their photo
     const s = NET.seats.find(q => q && q.kind === 'phone' && q.id === id);
     if (s && 'photo' in x && s.photo !== photo) { s.photo = photo; lobbyChanged(); saveGame(); }
+    // a new phone (or a different browser) claiming a seat whose phone has gone: it takes the seat over
+    const want = Number.isInteger(x.seat) ? NET.seats[x.seat] : null;
+    if (!s && want && want.kind === 'phone' && !NET.online[want.id] && state) {
+      const pid = state.players.findIndex(q => q.seat === x.seat && q.phone === want.id && q.active);
+      if (pid >= 0) {
+        want.id = id; if (photo) want.photo = photo;
+        NET.rebind.push({ pid, id }); NET.snaps.add(id); lobbyChanged(); saveGame(); netPump(); return;
+      }
+    }
     netSend(Object.assign(lobbyMsg(), { to: id })); return;
   } // mid-game: rejoining players get a snapshot via 'join'
   let at = NET.seats.findIndex(s => s && s.kind === 'phone' && s.id === id);
@@ -2257,7 +2318,7 @@ function phoneMsg(m) {
   if (m.t === 'lobby') {
     NET.lobby = m; NET.hostOn = true; netStatus(); applyPortraits(); if (state) renderMats(withSeats(E.summary(state, BOARD)));
     if (!m.started && NET.inGame) phoneBackToLobby();
-    renderPhoneLobby();
+    renderPhoneLobby(); renderRejoinPick();
     if (m.started && !NET.inGame) netRequestSync();
     return;
   }
@@ -2273,12 +2334,25 @@ function adoptSnap(m) {
   const first = !NET.inGame;
   state = m.state; state.news = state.news || [];
   NET.seq = m.seq; NET.q = NET.q.filter(x => x.seq >= m.seq); NET.waiting = false; NET.started = true;
-  NET.me = state.players.findIndex(p => p.phone === NET.id); if (NET.me < 0) NET.me = null;
+  const was = NET.me; NET.me = state.players.findIndex(p => p.phone === NET.id); if (NET.me < 0) NET.me = null;
+  if (!first && NET.me !== null && was === null) setTimeout(() => { if (state && !view.isDriverView()) setDriver(true); }, 600);
+  setTimeout(renderRejoinPick, 0);
   if (first) {
     NET.inGame = true; beginGame(); netWakeLock();
     if (NET.me !== null) setTimeout(() => { if (state && !view.isDriverView()) setDriver(true); }, 1600);
   } else { resetBoard(); syncAll(false); render(); }
   netPump();
+}
+// a phone watching a game it has no seat in: offer the seats whose phones have gone, so a player can carry on
+function renderRejoinPick() {
+  const box = $('rejoinPick'); if (!box) return;
+  const L = NET.lobby, seats = NET.mode === 'player' && NET.inGame && NET.me === null && state && state.winner === null && L && L.started
+    ? L.seats.map((s, i) => ({ s, i })).filter(({ s, i }) => s.kind === 'phone' && !s.online && state.players.some(p => p.seat === i && p.active && p.phone)) : [];
+  const show = seats.length > 0 && !renderRejoinPick.dismissed;
+  box.classList.toggle('hidden', !show); if (!show) return;
+  $('rejoinList').innerHTML = seats.map(({ s, i }) => `<button class="pseat" data-seat="${i}" style="--pc:${COLS[i]}">${s.photo ? `<img class="seatPic" src="${s.photo}" alt="">` : `<span class="sw" style="background:${COLS[i]}"></span>`}I'm ${esc(s.name)}</button>`).join('');
+  $('rejoinList').querySelectorAll('.pseat').forEach(b => b.onclick = () => { Sound.init(); NET.wantSeat = +b.dataset.seat; netHello(); Sound.ui('click'); b.disabled = true; b.textContent = 'Rejoining…'; });
+  $('rejoinWatch').onclick = () => { renderRejoinPick.dismissed = true; box.classList.add('hidden'); };
 }
 function phoneBackToLobby() {
   NET.inGame = false; NET.started = false; NET.q = []; NET.me = null;
@@ -2294,6 +2368,13 @@ function netPump() {
   if (NET.mode === 'host') {
     if (acting || !state) return;
     if (NET.snaps.size) { for (const id of NET.snaps) { netSend({ t: 'snap', to: id, seq: NET.seq, state }); netEnv(id); } NET.snaps.clear(); }
+    if (NET.rebind.length) {
+      const { pid, id } = NET.rebind.shift(), p = state.players[pid];
+      if (p && p.phone !== id && !state.players.some(q => q.phone === id)) {
+        if (p.ai && NET.takeover.has(pid)) NET.handback.push(pid);
+        runAction({ type: '_phone', player: pid, phone: id }); return;
+      }
+    }
     if (NET.handback.length) { const pid = NET.handback.shift(); NET.takeover.delete(pid); if (state.players[pid].ai) { runAction({ type: '_setAI', player: pid, ai: null }); return; } }
     while (NET.inbox.length && !acting) {
       const { id, a } = NET.inbox.shift(), l = netLegal(a, id);
@@ -2353,7 +2434,7 @@ function renderPhoneLobby() {
   $('phoneJoin').textContent = joined ? 'Update name' : 'Join the game';
   $('phoneStart').classList.toggle('hidden', !joined);
   $('phoneStart').disabled = filled < 2 || !NET.hostOn;
-  $('phoneNote').textContent = !NET.open ? 'Connecting…' : !NET.hostOn ? 'Waiting for the TV — open the game on the TV screen first.' : NET.started ? 'A game is in progress on this TV.' : joined ? (filled < 2 ? 'You\'re in. Waiting for more players…' : 'You\'re in. Start when everyone has joined.') : 'Type your name, pick a colour, then join.';
+  $('phoneNote').textContent = !NET.open ? 'Connecting…' : !NET.hostOn ? 'Waiting for the TV — open the game on the TV screen first.' : NET.started ? 'A game is in progress on this TV — it will appear here in a moment.' : joined ? (filled < 2 ? 'You\'re in. Waiting for more players…' : 'You\'re in. Start when everyone has joined.') : 'Type your name, pick a colour, then join.';
 }
 
 // ---------------------------------------------------------------- start-up for each mode
