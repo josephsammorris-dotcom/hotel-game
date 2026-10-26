@@ -5004,7 +5004,8 @@ async function finale(winnerId) {
 function doAction(a) {
   if (NET.mode === 'player') { // a phone asks the TV; the move comes back to everyone once the TV has checked it
     if (acting || !state || NET.waiting || state.winner !== null) return;
-    NET.waiting = true; clearTimeout(NET.waitT); NET.waitT = setTimeout(() => { NET.waiting = false; render(); }, 5000);
+    NET.waiting = true; clearTimeout(NET.waitT);
+    NET.waitT = setTimeout(() => { NET.waiting = false; toast('Couldn\'t reach the TV — reconnecting. Tap again in a moment.', 'bad'); netReconnect(); render(); }, 3500);
     NET.stats.sent++; netSend({ t: 'act', a, seq: NET.seq }); render(); return;
   }
   return runAction(a);
@@ -5804,13 +5805,24 @@ function netConnect() {
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws/${NET.code}?role=${NET.mode === 'host' ? 'host' : 'player'}&id=${encodeURIComponent(NET.id)}`;
   let ws; try { ws = new WebSocket(url); } catch (e) { return netRetry(); }
   NET.ws = ws;
-  ws.onopen = () => { if (NET.ws !== ws) return; NET.open = true; NET.retry = 0; netStatus(); if (NET.mode === 'player') netHello(); };
-  ws.onmessage = e => { if (NET.ws !== ws || e.data === 'pong') return; let m; try { m = JSON.parse(e.data); } catch (er) { return; } if (NET.mode === 'host') hostMsg(m); else phoneMsg(m); };
+  ws.onopen = () => { if (NET.ws !== ws) return; NET.heard = Date.now(); NET.open = true; NET.retry = 0; netStatus(); if (NET.mode === 'player') netHello(); };
+  ws.onmessage = e => { if (NET.ws !== ws) return; NET.heard = Date.now(); if (e.data === 'pong') return; let m; try { m = JSON.parse(e.data); } catch (er) { return; } if (NET.mode === 'host') hostMsg(m); else phoneMsg(m); };
   ws.onclose = ev => { if (NET.ws !== ws) return; NET.open = false; NET.hostOn = false; netStatus(); if (ev.code === 4000) { netStatus('This game is now open on another screen.'); return; } netRetry(); };
   ws.onerror = () => {};
 }
 function netRetry() { clearTimeout(NET.rt); NET.retry = Math.min(6, (NET.retry || 0) + 1); NET.rt = setTimeout(netConnect, [0, 400, 1000, 2000, 3000, 5000, 8000][NET.retry]); }
-setInterval(() => { if (NET.ws && NET.ws.readyState === 1) NET.ws.send('ping'); }, 25000);
+// a dropped connection doesn't always say so (phones sleeping, Wi-Fi hopping): ping often and reconnect on silence
+setInterval(() => {
+  if (!NET.ws || NET.ws.readyState !== 1) return;
+  if (NET.heard && Date.now() - NET.heard > 22000) { netReconnect(); return; }
+  try { NET.ws.send('ping'); } catch (e) {}
+}, 8000);
+function netReconnect() {
+  const old = NET.ws; NET.ws = null; NET.open = false; netStatus();
+  if (old) { old.onclose = old.onmessage = null; try { old.close(); } catch (e) {} }
+  NET.retry = 0; netConnect();
+  if (NET.mode === 'player' && state) setTimeout(netRequestSync, 400);
+}
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || NET.mode === 'local' || !NET.code) return;
   if (!NET.ws || NET.ws.readyState > 1) { NET.retry = 0; netConnect(); }
@@ -5864,7 +5876,10 @@ function hostMsg(m) {
   if (x.t === 'leaveSeat' && !NET.started) { NET.seats = NET.seats.map(s => s && s.kind === 'phone' && s.id === id ? null : s); lobbyChanged(); return; }
   if (x.t === 'start' && !NET.started) return tvStart();
   if (x.t === 'sync' && state) { NET.snaps.add(id); netPump(); return; }
-  if (x.t === 'act' && NET.started && state) { NET.inbox.push({ id, a: x.a }); netPump(); }
+  if (x.t === 'act') {
+    if (!NET.started || !state) { netSend({ t: 'nack', to: id, seq: NET.seq, why: 'no game running on the TV' }); return; }
+    netSend({ t: 'got', to: id }); NET.inbox.push({ id, a: x.a }); netPump();
+  }
 }
 function seatPhone(id, x) {
   const name = cleanName(x.name) || 'Player', photo = okPhoto(x.photo) ? x.photo : null, voice = okVoice(x.voice) ? x.voice : null;
@@ -5909,6 +5924,18 @@ function netLegal(a, id) {
   const acts = E.legalActions(state, BOARD);
   if (a.type === 'bid') { const l = acts.find(x => x.type === 'bid' && x.player === a.player), amt = Math.round(+a.amount); return l && amt >= l.min && amt <= l.max ? { type: 'bid', player: a.player, amount: amt } : null; }
   return acts.find(l => l.type === a.type && Object.keys(l).every(k => JSON.stringify(l[k]) === JSON.stringify(a[k]))) || null;
+}
+// why a phone's move was turned down (shown on that phone, so problems can be seen and reported)
+function netWhy(a, id) {
+  if (!a || typeof a !== 'object') return 'bad message';
+  if (!state) return 'no game on the TV';
+  if (state.winner !== null) return 'the game is over';
+  const p = state.players[a.player];
+  if (!p) return 'unknown player';
+  if (p.phone !== id) { const mineP = state.players.find(q => q.phone === id); return mineP ? `that phone plays ${mineP.name}, not ${p.name}` : 'this phone isn\'t in the game'; }
+  if (p.ai) return `the computer is playing for ${p.name}`;
+  const acts = E.legalActions(state, BOARD), who = acts.length ? state.players[acts[0].player].name : '';
+  return `out of step with the TV (it's waiting for ${who || 'someone'} to ${acts.length ? acts[0].type : 'play'})`;
 }
 function netWaitingFor(actor, btns) {
   const d = document.createElement('div'); d.className = 'thinking';
@@ -6016,7 +6043,12 @@ function phoneMsg(m) {
   if (m.t === 'snap') return adoptSnap(m);
   if (m.t === 'env') { view.followEnv(m.e); return; }
   if (m.t === 'act') { if (!NET.inGame) return; NET.q.push(m); NET.q.sort((x, y) => x.seq - y.seq); netPump(); return; }
-  if (m.t === 'nack') { NET.stats.nack++; NET.waiting = false; clearTimeout(NET.waitT); if (!acting && state) { if (m.seq !== NET.seq) netRequestSync(); render(); } return; }
+  if (m.t === 'got') { if (NET.waiting) { clearTimeout(NET.waitT); NET.waitT = setTimeout(() => { NET.waiting = false; netRequestSync(); render(); }, 20000); } return; }
+  if (m.t === 'nack') {
+    NET.stats.nack++; NET.waiting = false; clearTimeout(NET.waitT);
+    if (m.why) toast(`The TV didn't take that move: ${m.why}. Catching up…`, 'bad');
+    if (state) netRequestSync(); if (!acting && state) render(); return;
+  }
   if (m.t === 'full') toast('This game already has four players.', 'bad');
 }
 function adoptSnap(m) {
@@ -6070,7 +6102,8 @@ function netPump() {
     while (NET.inbox.length && !acting) {
       const { id, a } = NET.inbox.shift(), l = netLegal(a, id);
       if (l) { runAction(l); return; }
-      NET.stats.nack++; netSend({ t: 'nack', to: id, seq: NET.seq });
+      NET.stats.nack++; const why = netWhy(a, id); netSend({ t: 'nack', to: id, seq: NET.seq, why });
+      console.warn('turned down a move from', id, a, why);
     }
   } else if (NET.mode === 'player') {
     if (acting) return;
