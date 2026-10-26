@@ -1523,7 +1523,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     anims.push({ kind: 'build', obj, s, t: 0 }); sfx('buildStart', obj.getWorldPosition(new THREE.Vector3()));
   }
   function cancel(obj) {
-    for (let i = anims.length - 1; i >= 0; i--) { const a = anims[i]; if (a.obj === obj) { if (a.s) disposeSite(a.s); anims.splice(i, 1); } }
+    for (let i = anims.length - 1; i >= 0; i--) { const a = anims[i]; if (a.obj === obj) { if (a.s) disposeSite(a.s); if (a.rot0) obj.rotation.copy(a.rot0); anims.splice(i, 1); } }
     obj.scale.set(1, 1, 1); obj.position.copy(obj.userData.home || obj.position);
   }
   function sprout(grounds) {
@@ -1534,6 +1534,97 @@ function createBoard3D(deps, container, board, scenery, opts) {
   let soundCb = null;
   const _sp = new THREE.Vector3();
   function where(pos) { _sp.copy(pos).project(camera); return { pan: Math.max(-1, Math.min(1, _sp.x)), dist: camera.position.distanceTo(pos), onScreen: Math.abs(_sp.x) < 1.1 && Math.abs(_sp.y) < 1.1 && _sp.z < 1 }; }
+  // ---------------------------------------------------------------- demolition: charges at each entrance, then at the
+  // foot of each building, which drops into its own base in a cloud of dust and rubble
+  const BLAST_COLS = ['#fff3c4', '#ffd23f', '#ff9a3c', '#ff5a2a', '#ffb347'].map(c => new THREE.Color(c));
+  const rubbleGeo = new THREE.BoxGeometry(0.03, 0.03, 0.03), rubbleMat = new THREE.MeshStandardMaterial({ color: '#8a8378', roughness: 1 });
+  const fireGeo = new THREE.SphereGeometry(1, 14, 10);
+  function blast(pos, size) {
+    fwPoints.visible = true; size = size || 1;
+    fwSpawn(3, pos.x, pos.y + 0.05, pos.z, 0, 0, 0, 0.2, 0.45 * size, BLAST_COLS[0]); // the flash
+    // the fireball: white-hot, swelling through yellow and orange, then gone
+    for (let k = 0; k < (liteProfile ? 1 : 3); k++) {
+      const m = new THREE.Mesh(fireGeo, new THREE.MeshBasicMaterial({ color: '#fff6d0', transparent: true, opacity: 1, depthWrite: false, toneMapped: false }));
+      m.position.set(pos.x + (rnd() - 0.5) * 0.06 * size, pos.y + 0.03 + k * 0.025 * size, pos.z + (rnd() - 0.5) * 0.06 * size); m.scale.setScalar(0.02);
+      m.renderOrder = 9; scene.add(m);
+      anims.push({ kind: 'fireball', m, t: -k * 0.05, r: (0.13 + rnd() * 0.06) * size * (k ? 0.7 : 1), life: 0.5 + rnd() * 0.15 });
+    }
+    const n = Math.round((liteProfile ? 9 : 20) * size);
+    for (let k = 0; k < n; k++) {
+      const a = rnd() * Math.PI * 2, up = 0.35 + rnd() * 0.65, v = (0.5 + rnd() * 0.9) * size;
+      fwSpawn(2, pos.x, pos.y + 0.04, pos.z, Math.cos(a) * v * (1 - up * 0.5), up * v * 1.4, Math.sin(a) * v * (1 - up * 0.5), 0.3 + rnd() * 0.35, 0.028 + 0.02 * size, BLAST_COLS[1 + Math.floor(rnd() * 4)]);
+    }
+    const puffs = liteProfile ? 3 : 6;
+    for (let k = 0; k < puffs; k++) {
+      const m = new THREE.Mesh(dustGeo, new THREE.MeshStandardMaterial({ color: k % 2 ? '#4f4a44' : '#7a746b', emissive: k % 2 ? '#2a2622' : '#3d3934', envMapIntensity: 0, transparent: true, opacity: 0.9, roughness: 1, depthWrite: false }));
+      const a = rnd() * Math.PI * 2; m.position.set(pos.x + Math.cos(a) * 0.04, pos.y + 0.05, pos.z + Math.sin(a) * 0.04); m.scale.setScalar(0.9 * size); scene.add(m);
+      anims.push({ kind: 'smoke', m, t: -0.08, life: 1.1 + rnd() * 0.6, s0: 0.9 * size, v: new THREE.Vector3(Math.cos(a) * 0.35 * size, 0.35 + rnd() * 0.4, Math.sin(a) * 0.35 * size) });
+    }
+  }
+  function rubble(pos, spread, n) {
+    for (let k = 0; k < (liteProfile ? Math.ceil(n / 2) : n); k++) {
+      const m = new THREE.Mesh(rubbleGeo, rubbleMat), a = rnd() * Math.PI * 2, v = 0.3 + rnd() * 0.7;
+      m.position.set(pos.x + Math.cos(a) * spread * rnd(), pos.y + 0.03, pos.z + Math.sin(a) * spread * rnd()); m.scale.setScalar(0.6 + rnd() * 1.4); scene.add(m);
+      anims.push({ kind: 'rubble', m, t: 0, v: new THREE.Vector3(Math.cos(a) * v, 0.8 + rnd() * 1.2, Math.sin(a) * v), spin: new THREE.Vector3(rnd() * 9, rnd() * 9, rnd() * 9) });
+    }
+  }
+  function later(delay, hotel, fn) { anims.push({ kind: 'later', t: -delay, fn, g: { userData: { hotel } } }); }
+  // Knock a hotel down to `built` buildings (and the facilities if `facilities` is false), blowing up the given entrances first.
+  // Resolves when the dust has settled.
+  function demolish(id, built, facilities, spaces, delay) {
+    const h = hotels[id]; if (!h) return Promise.resolve();
+    spaces = (spaces || []).filter(sp => entrances[sp]);
+    const doomed = h.pieces.map((o, k) => ({ o, k })).filter(({ o, k }) => o.visible && k >= built).reverse(); // top phase first
+    const groundsGo = !facilities && h.grounds.group.visible;
+    if (reduceMotion || (!doomed.length && !spaces.length && !groundsGo)) {
+      spaces.forEach(sp => setEntrance(sp, null)); setHotel(id, built, facilities, false); return Promise.resolve();
+    }
+    if (hotelBatches && hotelBatches[id]) unmergeHotel(id); if (hotelDirty) hotelDirty.add(id);
+    h.built = Math.min(h.built, built); h.facilities = !!facilities && h.facilities;
+    let t = delay || 0;
+    // 1. a small charge at each entrance, one after another
+    spaces.forEach(sp => {
+      later(t, id, () => {
+        const m = entrances[sp]; if (!m) return;
+        const p = m.position.clone(); blast(p, 0.55); rubble(p, 0.05, 5); sfx('blast', p, { size: 0.5 });
+        scene.remove(m); delete entrances[sp];
+      });
+      t += 0.32;
+    });
+    if (spaces.length) t += 0.35;
+    // 2. the leisure facilities go in one bang
+    if (groundsGo) {
+      later(t, id, () => {
+        const g = h.grounds.group, b = new THREE.Box3().setFromObject(g), c = b.getCenter(new THREE.Vector3()); c.y = 0;
+        blast(c, 1); sfx('blast', c, { size: 0.7 }); smoke(g, false); h.grounds.parts.forEach(o => cancel(o)); g.visible = false; freeze(g);
+      });
+      t += 0.5;
+    }
+    // 3. each building: a ring of charges round its foot, then it drops into its base
+    doomed.forEach(({ o }) => {
+      later(t, id, () => {
+        cancel(o); thaw(o);
+        const b = new THREE.Box3().setFromObject(o), c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+        const rx = sz.x / 2, rz = sz.z / 2, n = Math.max(3, Math.min(6, Math.round((sz.x + sz.z) * 2.2)));
+        for (let k = 0; k < n; k++) {
+          const a = k / n * Math.PI * 2 + rnd() * 0.4, p = new THREE.Vector3(c.x + Math.cos(a) * (rx + 0.04), b.min.y, c.z + Math.sin(a) * (rz + 0.04));
+          later(k * 0.07, id, () => blast(p, 1.05));
+        }
+        sfx('blast', c.clone().setY(b.min.y), { size: 1, big: true });
+        anims.push({ kind: 'collapse', obj: o, t: -0.3, T: 1.25 + Math.min(0.6, sz.y * 0.35), rot0: o.rotation.clone(), tip: (rnd() - 0.5) * 0.16, tip2: (rnd() - 0.5) * 0.12, base: c.clone().setY(b.min.y), r: Math.max(rx, rz), h: sz.y });
+      });
+      t += 0.75;
+    });
+    const pr = new Promise(res => later(t + 1.9, id, res)); pr.secs = t + 1.9; return pr;
+  }
+  // the box round everything standing on a hotel's plot (for the camera)
+  function hotelBox(id, why) {
+    const h = hotels[id]; if (!h) return null; const box = new THREE.Box3();
+    if (why) return JSON.stringify({ pieces: h.pieces.map(o => o.visible), grounds: h.grounds.group.visible, built: h.built });
+    h.pieces.forEach(o => { if (o.visible) box.expandByObject(o); }); if (h.grounds.group.visible) box.expandByObject(h.grounds.group);
+    return box.isEmpty() ? null : box;
+  }
+  let timeScale = 1; // test hook: 0 freezes the board's clock so frames can be stepped one at a time
   function sfx(name, pos, extra) { if (!soundCb) return; try { soundCb(name, Object.assign(pos ? where(pos) : {}, extra || {})); } catch (e) { console.error(e); } }
   const easeOutBack = x => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
   function stepAnims(dt) {
@@ -1577,7 +1668,32 @@ function createBoard3D(deps, container, board, scenery, opts) {
         if (!a.puffed && a.t >= T_BUILD) { a.puffed = true; sfx('buildDone', a.obj.getWorldPosition(new THREE.Vector3())); a.obj.scale.set(1, 1, 1); smoke(a.obj, true); disposeSite(st); }
         if (a.t >= T_BUILD) { const x = Math.min(1, (a.t - T_BUILD) / (T_END - T_BUILD)), k = 1 + Math.sin(x * Math.PI) * 0.07; a.obj.scale.set(k, 1 + (k - 1) * 1.4, k); }
         if (a.t >= T_END) { a.obj.scale.set(1, 1, 1); anims.splice(i, 1); }
+      } else if (a.kind === 'later') {
+        if (a.t >= 0) { anims.splice(i, 1); try { a.fn(); } catch (e) { console.error(e); } }
+      } else if (a.kind === 'collapse') {
+        if (a.t < 0) continue;
+        const o = a.obj, x = Math.min(1, a.t / a.T), e = x * x * (1.6 - 0.6 * x); // slow to start, then it goes
+        const shake = (1 - x) * 0.012 * Math.min(1, a.t * 8);
+        o.scale.set(1 + x * 0.12, Math.max(0.001, 1 - e), 1 + x * 0.12);
+        o.rotation.set(a.rot0.x + a.tip * e, a.rot0.y, a.rot0.z + a.tip2 * e);
+        const home = o.userData.home || o.position; o.position.set(home.x + (rnd() - 0.5) * shake, home.y, home.z + (rnd() - 0.5) * shake);
+        if (!a.dusted && x > 0.25) { a.dusted = true; dust(a.base, a.r * 1.6); rubble(a.base, a.r, 10); sfx('crumble', a.base, { h: a.h }); }
+        if (!a.dusted2 && x > 0.8) { a.dusted2 = true; dust(a.base, a.r * 2); rubble(a.base, a.r * 0.8, 6); }
+        if (x >= 1) { o.visible = false; o.scale.set(1, 1, 1); o.rotation.copy(a.rot0); o.position.copy(home); freeze(o); anims.splice(i, 1); }
+      } else if (a.kind === 'fireball') {
+        if (a.t < 0) continue;
+        const x = Math.min(1, a.t / a.life), m = a.m;
+        m.scale.setScalar(Math.max(0.01, a.r * (0.35 + 0.65 * Math.sqrt(x)))); m.position.y += dt * 0.12;
+        m.material.color.setRGB(1, Math.max(0.22, 0.95 - x * 1.1), Math.max(0.04, 0.7 - x * 2.2));
+        m.material.opacity = x < 0.55 ? 1 : 1 - (x - 0.55) / 0.45;
+        if (x >= 1) { scene.remove(m); m.material.dispose(); anims.splice(i, 1); }
+      } else if (a.kind === 'rubble') {
+        a.v.y -= 5 * dt; a.m.position.addScaledVector(a.v, dt); a.m.rotation.x += a.spin.x * dt; a.m.rotation.y += a.spin.y * dt; a.m.rotation.z += a.spin.z * dt;
+        if (a.m.position.y < 0.012) { a.m.position.y = 0.012; a.v.set(a.v.x * 0.4, Math.abs(a.v.y) * 0.25, a.v.z * 0.4); a.spin.multiplyScalar(0.5); }
+        if (a.t > 1.6) a.m.scale.multiplyScalar(Math.max(0, 1 - dt * 4));
+        if (a.t > 2.2) { scene.remove(a.m); anims.splice(i, 1); }
       } else if (a.kind === 'smoke') {
+        if (a.t < 0) { a.m.visible = false; continue; } a.m.visible = true;
         a.m.position.addScaledVector(a.v, dt); a.v.multiplyScalar(0.93); const x = Math.min(1, a.t / a.life);
         a.m.scale.setScalar(a.s0 * (1 + x * 2.2)); a.m.material.opacity = 0.9 * (1 - x);
         if (x >= 1) { scene.remove(a.m); a.m.material.dispose(); anims.splice(i, 1); }
@@ -2470,7 +2586,7 @@ function createBoard3D(deps, container, board, scenery, opts) {
     if ((opt.cap30 || now > perf.busyUntil) && now - perf.lastDraw < 31) return;
     const ms = now - perf.lastDraw; perf.lastDraw = now; perf.lastMs = ms;
     perf.fpsN++; if (now - perf.fpsT >= 1000) { perf.fps = Math.round(perf.fpsN * 1000 / (now - perf.fpsT)); perf.fpsN = 0; perf.fpsT = now; }
-    const dt = Math.min(0.1, clock.getDelta());
+    const dt = Math.min(0.1, clock.getDelta()) * timeScale;
     simulate(dt);
     const wasBusy = perf.lastDraw - ms <= perf.busyUntil; // the previous frame was a full-rate one too, so ms is a true frame time
     const busy = busyNow(); if (busy) perf.busyUntil = now + 400;
@@ -2528,13 +2644,13 @@ function createBoard3D(deps, container, board, scenery, opts) {
     _cars: cars, fireworks, onSound(fn) { soundCb = fn; }, camDistance: () => camera.position.distanceTo(controls.target), isCutaway: () => cutaway, setQuality, _fwLive: () => fwLive,
     setHotel, setEntrance, moveCar, flyTo, setTiltShift, entranceSide,
     setOwner, saleSign, spaceImage, zoomBy, setDriverView, isDriverView: () => !!driver,
-    showcase,
+    showcase, demolish, hotelBox,
     setSafeArea(a) { safe = Object.assign({ top: 0, right: 0, bottom: 0, left: 0 }, a); },
     setDriveSpeed(k) { driveSpeed = k; },
     _govern(ms, secs, t0) { let t = t0 || performance.now(); const end = t + secs * 1000; while (t < end) { t += ms; govern(t, ms, true); } return { pr: perf.pr, lite: perf.lite, ceil: perf.ceil }; }, // test hook
     _advance(sec) { for (let t = 0; t < sec; t += 1 / 30) simulate(1 / 30); }, // test hook: run the world forward without drawing
     onPerf(fn) { perf.cb = fn; notify(); }, ready, onContextLost(fn) { lostCb = fn; }, perfState: () => ({ mode: perf.mode, tier, profile: liteProfile ? 'lite' : 'full', pr: perf.pr, lite: perf.lite, ceil: perf.ceil, fps: perf.fps, idle: performance.now() > perf.busyUntil, n: perf.n, slow: perf.slow, fast: perf.fast, last: Math.round(perf.lastMs || 0) }),
-    _applyProfile: applyProfile, setOptions, setSharpness, setTier, getOptions: () => Object.assign({ lite: liteProfile }, opt), _merged: () => merged.length, _ambK(k) { SIMPLE_AMB = k; }, _upkeep() { labUpkeep(performance.now()); }, _profileFrame() { const t0 = performance.now(); simulate(1 / 30); const t1 = performance.now(); labUpkeep(t1); busyNow(); const t2 = performance.now(); if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(1 / 30); const t3 = performance.now(); return { sim: t1 - t0, upkeep: t2 - t1, render: t3 - t2 }; }, _composer: composer, _renderOnce() { if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(0.016); },
+    _timeScale(k) { timeScale = k; }, _step(dt) { simulate(dt); labUpkeep(performance.now()); }, _applyProfile: applyProfile, setOptions, setSharpness, setTier, getOptions: () => Object.assign({ lite: liteProfile }, opt), _merged: () => merged.length, _ambK(k) { SIMPLE_AMB = k; }, _upkeep() { labUpkeep(performance.now()); }, _profileFrame() { const t0 = performance.now(); simulate(1 / 30); const t1 = performance.now(); labUpkeep(t1); busyNow(); const t2 = performance.now(); if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(1 / 30); const t3 = performance.now(); return { sim: t1 - t0, upkeep: t2 - t1, render: t3 - t2 }; }, _composer: composer, _renderOnce() { if (opt.noPost) { renderer.setRenderTarget(null); renderer.render(scene, camera); } else composer.render(0.016); },
     getEnv, setTimeMode, setWeather, envState, followEnv, setPortrait, onEnv(fn) { env.listeners.push(fn); fn(getEnv()); },
     setInsetLeft(px) { insetLeft = px; resize(); },
     setCar(i, v) { if (cars[i]) cars[i].visible = !!v; },

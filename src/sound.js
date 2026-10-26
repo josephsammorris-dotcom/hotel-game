@@ -335,6 +335,18 @@
     takeover() { if (!ok()) return; const t = now(); play('impact_big', { t, gain: 0.8, rate: 0.85 }); play('placement_c', { t, gain: 0.9, rate: 0.6 }); play('error_006', { t: t + 0.25, gain: 0.5, rate: 0.8 }); },
     entrance(o) { if (!ok()) return; const t = now(); play('drop_002', { t, gain: 0.7, pan: o && o.pan }); play('confirmation_001', { t: t + 0.15, gain: 0.55, rate: 1.15 }); },
     gavel(n) { if (!ok()) return; const t = now(); for (let k = 0; k < (n || 1); k++) { play("dicehit_wood5", { t: t + k * 0.32, gain: 2.2, rate: 0.5 }); play('placement_c', { t: t + k * 0.32, gain: 0.8, rate: 0.55 }); } },
+    // demolition charges (entrances are small pops, buildings a deep thump) and the rumble of a building coming down
+    blast(o) {
+      if (!ok()) return; o = o || {}; const t = now(), gg = Math.max(0.5, distGain(o.dist)), pan = (o.pan || 0) * 0.7, big = !!o.big;
+      const k = FX._blasts = (FX._blasts || []).filter(x => t - x < 0.25); if (k.length >= 2) return; k.push(t);
+      play(pick('fw_boom1', 'fw_boom2', 'fw_boom3'), { t, gain: (big ? 0.5 : 0.28) * gg, rate: big ? R(0.5, 0.6) : R(0.85, 1.05), lp: big ? 900 : 2400, pan, wet: 0.25 });
+      if (big) play('fw_crackle', { t: t + 0.05, gain: 0.18 * gg, rate: R(0.7, 0.85), pan });
+    },
+    crumble(o) {
+      if (!ok()) return; o = o || {}; const t = now(), gg = Math.max(0.5, distGain(o.dist)), pan = (o.pan || 0) * 0.6;
+      ['removal_a', 'removal_b', 'removal_c', 'removal_d'].forEach((n, k) => play(n, { t: t + k * 0.16, gain: 0.55 * gg, rate: R(0.6, 0.8), pan }));
+      play('fw_boom2', { t, gain: 0.3 * gg, rate: 0.42, lp: 500, pan });
+    },
     demolish() { if (!ok()) return; const t = now(); play('fw_boom2', { t, gain: 0.4, rate: 0.6, lp: 1200 }); ['removal_a', 'removal_b', 'removal_c', 'removal_d'].forEach((n, k) => play(n, { t: t + 0.1 + k * 0.18, gain: 0.7, rate: R(0.7, 0.9) })); },
     debt() { if (!ok()) return; play('beeps', { gain: 0.8 }); },
     bankrupt() { if (!ok()) return; const t = now(); play('impact_big', { t, gain: 0.8, rate: 0.7 }); play('trombone', { t: t + 0.3, gain: 0.55 }); },

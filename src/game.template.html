@@ -940,12 +940,18 @@ function startSpinner(html) {
 // The needle is driven by the Web Animations API and the verdict waits for it to actually stop, so even on a
 // slow frame the result is never announced while the needle is still resting at the top (next to ×2).
 let needleAnim = null, needleAngle = 0;
-function settleSpinner(result) {
+// Where in its wedge the needle stops comes from the game itself (not each screen's own dice), so the TV and every
+// phone show the needle in exactly the same place.
+function seededRand(key) {
+  let h = 2166136261; for (let k = 0; k < key.length; k++) { h ^= key.charCodeAt(k); h = Math.imul(h, 16777619); }
+  return () => { h += 0x6D2B79F5; let t = h; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function settleSpinner(result, key) {
   Sound.play('spinSettle', null);
-  const n = $('needle');
+  const n = $('needle'), rnd = key ? seededRand(key) : Math.random;
   const idxs = SPIN_WEDGES.map((v, i) => v === result ? i : -1).filter(i => i >= 0);
-  const i = idxs[Math.floor(Math.random() * idxs.length)];
-  const to = 4 * 360 + i * 60 + 10 + Math.random() * 40;
+  const i = idxs[Math.floor(rnd() * idxs.length)];
+  const to = 4 * 360 + i * 60 + 10 + rnd() * 40;
   if (needleAnim) { try { needleAnim.cancel(); } catch (e) {} }
   n.style.transition = 'none'; n.style.transform = `translate(-50%,-100%) rotate(${to}deg)`;
   const show = () => { $('spinLabel').textContent = SPIN_TEXT[result]; $('spinLabel').className = 'caption spinLabel result ' + (result === '2' ? 'two' : result); Sound.play('verdict', result); };
@@ -1171,7 +1177,7 @@ function eventSounds(ev) {
     case 'entrance': at(() => Sound.play('entrance'), d + 300); d += 500; break;
     case 'auctionStart': at(() => Sound.play('gavel', 1), d); d += 400; break;
     case 'auctionSold': at(() => Sound.play('gavel', 3), d); at(() => Sound.play('cashIn'), d + 900); d += 1200; break;
-    case 'demolished': at(() => Sound.play('demolish'), d); d += 900; break;
+    case 'demolished': break; // the charges and the collapse make their own noise (board3d demolish)
     case 'debt': at(() => Sound.play('debt'), d); d += 900; break;
     case 'bankrupt': at(() => Sound.play('bankrupt'), d); d += 2500; break;
     case 'win': at(() => Sound.play('win'), d); break;
@@ -1197,8 +1203,17 @@ async function sync3D(mover) {
   }
   state.players.forEach(p => { const to = p.active ? p.pos : -1; if (to !== seen.cars[p.seat]) { seen.cars[p.seat] = to; view.moveCar(p.seat, to, true); if (!p.active) setTimeout(() => view.setCar(p.seat, false), 900); } });
   let changedHotel = null, newBuild = null, party = 0, partyAt = null;
+  const demos = []; let demoBox = null;
   for (const id of HOTELS) {
     const p = state.plots[id], was = seen.hotels[id];
+    // knocked down (the Bank buying it back, unpaid building work cancelled): its entrances blow first, then the buildings come down
+    if (p.built < was.built || (was.facilities && !p.facilities)) {
+      const spaces = Object.keys(seen.entrances).filter(sp => seen.entrances[sp] === id && state.entrances[sp] === undefined).map(Number);
+      spaces.forEach(sp => delete seen.entrances[sp]);
+      demoBox = demoBox || view.hotelBox(id);
+      demos.push(view.demolish(id, p.built, p.facilities, spaces, mover === undefined && !reduceMotion ? 0.9 : 0)); seen.hotels[id] = { built: p.built, facilities: p.facilities }; // a moment for the camera to arrive
+      continue;
+    }
     if (p.built !== was.built || p.facilities !== was.facilities) {
       const box = view.setHotel(id, p.built, p.facilities, true); seen.hotels[id] = { built: p.built, facilities: p.facilities }; changedHotel = id; if (box) newBuild = box;
       // the better the news, the bigger the show: a completed hotel, then the leisure facilities on top
@@ -1209,6 +1224,10 @@ async function sync3D(mover) {
     }
   }
   if (party) view.fireworks(partyAt.box || partyAt.hotel, party);
+  if (demos.length) { // everyone watches it come down
+    const secs = Math.max(...demos.map(d => d.secs || 0));
+    await Promise.all([...demos, mover === undefined && demoBox && secs ? view.showcase(demoBox, Math.max(3.4, secs + 0.6), 3.2) : null]); if (gen !== gameGen || !state) return;
+  }
   let newEntrance = null;
   for (const sp in state.entrances) if (seen.entrances[sp] === undefined) { const box = view.setEntrance(+sp, state.entrances[sp], true); changedHotel = changedHotel || state.entrances[sp]; if (box) newEntrance = box; }
   for (const sp in seen.entrances) if (state.entrances[sp] === undefined) view.setEntrance(+sp, null);
@@ -1355,10 +1374,9 @@ async function finale(winnerId) {
   // the competition is demolished, one hotel after another
   for (const id of others) {
     if (tok !== finaleToken) return;
-    view.setHotel(id, 0, false, true); view.setOwner(id, null, true);
-    for (const sp in state.entrances) if (state.entrances[sp] === id) view.setEntrance(+sp, null);
-    Sound.play('demolish');
-    await wait(reduceMotion ? 50 : 700);
+    const spaces = Object.keys(state.entrances).filter(sp => state.entrances[sp] === id).map(Number);
+    view.demolish(id, 0, false, spaces); view.setOwner(id, null, true);
+    await wait(reduceMotion ? 50 : 900);
   }
   await wait(500);
   // the winner's unfinished hotels are completed, every building and the leisure facilities, one after another
@@ -1408,7 +1426,7 @@ async function runAction(a) {
   try { ev = E.apply(state, BOARD, a); NET.seq++; } catch (err) { if (isRoll || isStay) hideDice(); if (isSpin) hideSpinner(); console.error(err); acting = false; if (NET.mode === 'player') netRequestSync(); render(); tick(); return; }
   if (isRoll) { const mv = ev.find(e => e.type === 'move'); if (mv) settleDice(mv.roll, `<span class="sw" style="background:${COLS[moverSeat]}"></span>${esc(actor.name)} rolls <b>${mv.roll}</b>${mv.roll === 6 ? ' · extra turn' : ''}`); }
   if (isStay) { const st = ev.find(e => e.type === 'stay'); if (st) settleStay(st); if (st) settleDice(st.nights, `${st.nights} night${st.nights > 1 ? 's' : ''} · <b>${fmt(st.amount)}</b> to ${esc(pname(st.to))}`); await wait(reduceMotion ? 0 : 2400); if (gen !== gameGen) return; hideDice(); hideStay(); }
-  if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result); if (gen !== gameGen) return; await wait(reduceMotion ? 300 : 1300); if (gen !== gameGen) return; hideSpinner(); }
+  if (isSpin) { const sp = ev.find(e => e.type === 'spin'); if (sp && sp.result === 'H' && sp.hotel) celebrateBonus[sp.hotel] = 2; if (sp) await settleSpinner(sp.result, `${NET.seq}|${state.turn}|${sp.hotel || ''}|${state.players.map(p => p.cash + ':' + p.pos).join(',')}`); if (gen !== gameGen) return; await wait(reduceMotion ? 300 : 1300); if (gen !== gameGen) return; hideSpinner(); }
   addStories(storiesFrom(ev, ctx));
   saveGame();
   const winEv = ev.find(e => e.type === 'win'); if (winEv) { setTimeout(() => finale(winEv.player), 1200); renderRejoin(); }
@@ -2158,7 +2176,7 @@ async function start() {
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
   netInit(); titleInit();
-  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale, showBankNote, playGreeting, get acting() { return acting; } };
+  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale, showBankNote, playGreeting, sync3D, get acting() { return acting; } };
   // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
   ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
