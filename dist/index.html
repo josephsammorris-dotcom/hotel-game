@@ -631,6 +631,10 @@ body.lite #title .tBig,body.lite .tPane{background:rgba(28,26,24,.93)}
 @media (max-width:720px){#title{align-items:flex-end;background:linear-gradient(0deg,rgba(20,18,16,.85) 0%,rgba(20,18,16,.5) 55%,rgba(20,18,16,0) 85%)}#title .tCard{width:100%}.tLogo{font-size:4.2rem}.tBig{padding:11px 14px;min-height:56px}.tBig small{font-size:.8rem}}
 .photoRow{display:flex;gap:14px;align-items:center;margin:0 0 12px}.pPic{width:84px;height:84px;border-radius:50%;flex:none;background:#2a2622 center/cover no-repeat;box-shadow:0 0 0 3px var(--gold),0 6px 14px rgba(0,0,0,.4)}.pPic.empty{background-image:none;display:grid;place-items:center}.pPic.empty::after{content:"🙂";font-size:2.2rem;opacity:.6}
 .photoBtns{display:grid;gap:6px;justify-items:start}
+.voiceBox{margin:0 0 12px}.voiceBox .vbRow{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.voiceBox .vbRec.rec{background:#b8322a;border-color:#e0584d;color:#fff;animation:vbPulse 1s infinite}
+@keyframes vbPulse{50%{box-shadow:0 0 0 6px rgba(224,88,77,.25)}}
+.lvoice{font-size:.9em;opacity:.85;margin-left:4px}
 .seatPic{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 0 0 2px var(--pc,#fff)}
 .psPic{width:20px;height:20px;border-radius:50%;object-fit:cover;flex:none;box-shadow:0 0 0 2px var(--pc,#fff);margin-right:2px;vertical-align:middle}
 </style>
@@ -1227,9 +1231,36 @@ window.SOUND_DATA = {"back_001": "data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAA
   };
   function kickish(t) { tone({ f: 120, f2: 50, t, dur: 0.25, g: 0.35 }); }
 
+  // a player's recorded greeting (a data: URL from their phone): decoded once, quiet start trimmed, levelled, music dipped under it
+  const VOICE = new Map();
+  async function voiceBuf(url) {
+    if (VOICE.has(url)) return VOICE.get(url);
+    const p = (async () => {
+      const b64 = url.slice(url.indexOf(',') + 1), bin = atob(b64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const buf = await ctx.decodeAudioData(u8.buffer);
+      let peak = 0, start = buf.length, end = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; if (v > 0.03) { if (i < start) start = i; if (i > end) end = i; } } }
+      if (start >= end) { start = 0; end = buf.length; }
+      const sr = buf.sampleRate, from = Math.max(0, start / sr - 0.06), to = Math.min(buf.duration, end / sr + 0.25);
+      return { buf, from, dur: Math.min(4.3, Math.max(0.2, to - from)), gain: Math.min(5, 0.8 / Math.max(peak, 0.02)) };
+    })();
+    VOICE.set(url, p); p.catch(() => VOICE.delete(url));
+    if (VOICE.size > 12) VOICE.delete(VOICE.keys().next().value);
+    return p;
+  }
+  async function voice(url, delay) {
+    if (!ok() || !url) return 0;
+    let v; try { v = await voiceBuf(url); } catch (e) { return 0; }
+    const t = now() + (delay || 0), src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = v.buf; g.gain.value = v.gain * 1.1; src.connect(g); g.connect(sfxBus); src.start(t, v.from, v.dur);
+    if (musicBus && prefs.music) { const m = 0.42 * prefs.musicVol; musicBus.gain.cancelScheduledValues(t); musicBus.gain.setTargetAtTime(m * 0.25, t - 0.1, 0.08); musicBus.gain.setTargetAtTime(m, t + v.dur + 0.2, 0.5); }
+    return v.dur;
+  }
+
   // public
   const api = {
-    init,
+    init, voice,
     play(name, arg) { if (!ok()) return; const f = FX[name]; if (f) try { f(arg); } catch (e) { console.error(e); } },
     ui(name) { if (!ok()) return; const f = FX[name] || FX.click; try { f(); } catch (e) {} },
     // from the 3D board
@@ -4917,6 +4948,7 @@ function showStay() {
     <div class="stayResult hidden" id="stayResult"></div></div>`;
   document.body.classList.add('staying');
   Sound.play('stayAlert');
+  if (owner) playGreeting(owner.seat);
 }
 function settleStay(st) {
   const el = $('stayCard'); if (el.classList.contains('hidden')) return;
@@ -5749,7 +5781,7 @@ async function start() {
   for (let i = 0; i < 4; i++) view.setCar(i, false);
   view.flyTo('home');
   netInit(); titleInit();
-  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale, showBankNote, get acting() { return acting; } };
+  window._debug = { NET, showTitle, toMenu, get state() { return state; }, board: BOARD, doAction, view, render, syncAll, tick, renderActions, stopBots: () => clearTimeout(botTimer), addStories, openDeeds, animateTransfers, showLandedSpace, setDriver, finale, showBankNote, playGreeting, get acting() { return acting; } };
   // keep the loading screen up until the board's shaders are compiled, so the first thing players see is a smooth board
   ((view && view.ready) || Promise.resolve()).then(() => requestAnimationFrame(() => requestAnimationFrame(() => $('loading').classList.add('done'))));
 }
@@ -5799,7 +5831,7 @@ function netStatus(text) {
 
 // ---------------------------------------------------------------- the TV
 function lobbyMsg() {
-  return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, photo: s.photo || null, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
+  return { t: 'lobby', code: NET.code, started: NET.started, seats: NET.seats.map(s => s ? { kind: s.kind, name: s.name, id: s.kind === 'phone' ? s.id : null, photo: s.photo || null, voice: s.kind === 'phone' && !!s.voice, online: s.kind === 'phone' ? !!NET.online[s.id] : true } : { kind: 'empty' }) };
 }
 function lobbyChanged() { if (NET.mode !== 'host') return; netSend(lobbyMsg()); renderTvLobby(); applyPortraits(); renderRejoin(); if (state) render(); }
 // the TV: while any player's phone is away mid-game, a QR code in the corner to bring it back
@@ -5835,16 +5867,17 @@ function hostMsg(m) {
   if (x.t === 'act' && NET.started && state) { NET.inbox.push({ id, a: x.a }); netPump(); }
 }
 function seatPhone(id, x) {
-  const name = cleanName(x.name) || 'Player', photo = okPhoto(x.photo) ? x.photo : null;
+  const name = cleanName(x.name) || 'Player', photo = okPhoto(x.photo) ? x.photo : null, voice = okVoice(x.voice) ? x.voice : null;
   if (NET.started) { // mid-game: rejoining players get a snapshot via 'join'; a returning player can still update their photo
     const s = NET.seats.find(q => q && q.kind === 'phone' && q.id === id);
     if (s && 'photo' in x && s.photo !== photo) { s.photo = photo; lobbyChanged(); saveGame(); }
+    if (s && 'voice' in x && s.voice !== voice) { s.voice = voice; lobbyChanged(); saveGame(); }
     // a new phone (or a different browser) claiming a seat whose phone has gone: it takes the seat over
     const want = Number.isInteger(x.seat) ? NET.seats[x.seat] : null;
     if (!s && want && want.kind === 'phone' && !NET.online[want.id] && state) {
       const pid = state.players.findIndex(q => q.seat === x.seat && q.phone === want.id && q.active);
       if (pid >= 0) {
-        want.id = id; if (photo) want.photo = photo;
+        want.id = id; if (photo) want.photo = photo; if (voice) want.voice = voice;
         NET.rebind.push({ pid, id }); NET.snaps.add(id); lobbyChanged(); saveGame(); netPump(); return;
       }
     }
@@ -5855,7 +5888,7 @@ function seatPhone(id, x) {
   if (want >= 0 && want !== at) { if (at >= 0) NET.seats[at] = null; at = want; }
   if (at < 0) at = NET.seats.findIndex(s => !s || s.kind !== 'phone');
   if (at < 0) { netSend({ t: 'full', to: id }); return; }
-  NET.seats[at] = { kind: 'phone', id, name, photo };
+  NET.seats[at] = { kind: 'phone', id, name, photo, voice };
   lobbyChanged();
 }
 function tvStart() {
@@ -5901,7 +5934,64 @@ function applyPortraits() {
 }
 
 // ---------------------------------------------------------------- the phones
-function netHello() { netSend({ t: 'hello', name: lsGet('hotelPhoneName') || '', seat: NET.wantSeat, photo: lsGet('hotelPhonePhoto') || null }); }
+function netHello() { netSend({ t: 'hello', name: lsGet('hotelPhoneName') || '', seat: NET.wantSeat, photo: lsGet('hotelPhonePhoto') || null, voice: lsGet('hotelPhoneVoice') || null }); }
+// ---------------------------------------------------------------- a phone player's voice greeting: up to 4 seconds, played on the TV when someone stays at their hotel
+const VOICE_MAX = 4;
+const okVoice = x => typeof x === 'string' && x.length < 240000 && /^data:audio\/(webm|mp4|ogg|mpeg|aac|x-m4a|wav)(;[\w=.,-]*)?(;codecs=[\w.,"-]+)?;base64,[A-Za-z0-9+/=]+$/.test(x);
+const VREC = { rec: null, stream: null, timer: null, left: 0 };
+function voiceWidget(slot) {
+  const box = document.createElement('div'); box.className = 'voiceBox';
+  box.innerHTML = `<div class="vbRow"><button class="vbRec">🎙 Record a greeting</button><button class="vbPlay quiet hidden">▶ Play</button><button class="vbDel quiet hidden">Remove</button></div><div class="note vbNote">Up to ${VOICE_MAX} seconds — played on the TV when someone stays at one of your hotels.</div>`;
+  box.querySelector('.vbRec').onclick = () => { Sound.init(); if (VREC.starting) return; VREC.rec ? voiceStop() : voiceStart(); };
+  box.querySelector('.vbPlay').onclick = () => { const v = lsGet('hotelPhoneVoice'); if (v) { try { const a = new Audio(v); a.play().catch(() => {}); } catch (e) {} } };
+  box.querySelector('.vbDel').onclick = () => { try { localStorage.removeItem('hotelPhoneVoice'); } catch (e) {} voiceShow(); netHello(); };
+  slot.appendChild(box); voiceShow();
+}
+function voiceShow(note) {
+  const has = !!lsGet('hotelPhoneVoice'), can = !!(window.MediaRecorder && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  document.querySelectorAll('.voiceBox').forEach(b => {
+    const r = b.querySelector('.vbRec');
+    r.classList.toggle('rec', !!VREC.rec); r.disabled = !can;
+    r.textContent = VREC.rec ? `■ Stop (${VREC.left})` : has ? '🎙 Re-record greeting' : '🎙 Record a greeting';
+    b.querySelector('.vbPlay').classList.toggle('hidden', !has || !!VREC.rec); b.querySelector('.vbDel').classList.toggle('hidden', !has || !!VREC.rec);
+    b.querySelector('.vbNote').textContent = note || (!can ? 'This browser can\'t record sound.' : VREC.rec ? 'Recording… say hello to your guests!' : has ? 'Your greeting is saved. It plays on the TV when someone stays at one of your hotels.' : `Up to ${VOICE_MAX} seconds — played on the TV when someone stays at one of your hotels.`);
+  });
+}
+async function voiceStart() {
+  let stream; VREC.starting = true; voiceShow('Starting the microphone…');
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch (e) { VREC.starting = false; voiceShow('Microphone not allowed — check the browser\'s permission for this site.'); return; }
+  VREC.starting = false;
+  const type = ['audio/webm;codecs=opus', 'audio/mp4;codecs=mp4a.40.2', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/webm'].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
+  let rec; try { rec = new MediaRecorder(stream, Object.assign({ audioBitsPerSecond: 32000 }, type ? { mimeType: type } : {})); } catch (e) { stream.getTracks().forEach(t => t.stop()); voiceShow('Could not start recording — try again.'); return; }
+  const chunks = []; rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    stream.getTracks().forEach(t => t.stop());
+    const blob = new Blob(chunks, { type: (rec.mimeType || type || 'audio/webm') });
+    const fr = new FileReader();
+    fr.onload = () => {
+      const url = String(fr.result).replace(/^data:([^;,]+)[^,]*?;base64,/, (m, mt) => `data:${mt};base64,`); // keep just the media type
+      if (!okVoice(url)) { voiceShow('That recording didn\'t work — try a shorter one.'); return; }
+      lsSet('hotelPhoneVoice', url); voiceShow(); netHello(); Sound.ui('click');
+      try { new Audio(url).play().catch(() => {}); } catch (e) {}
+    };
+    fr.readAsDataURL(blob);
+  };
+  VREC.rec = rec; VREC.stream = stream; VREC.left = VOICE_MAX; rec.start(); voiceShow();
+  if (navigator.vibrate) try { navigator.vibrate(30); } catch (e) {}
+  VREC.timer = setInterval(() => { VREC.left--; if (VREC.left <= 0) voiceStop(); else voiceShow(); }, 1000);
+}
+function voiceStop() {
+  clearInterval(VREC.timer); const r = VREC.rec; VREC.rec = null;
+  if (r && r.state !== 'inactive') try { r.stop(); } catch (e) {}
+  voiceShow();
+}
+// the TV: an owner's greeting as a guest pulls up
+function playGreeting(ownerSeat) {
+  if (NET.mode !== 'host') return;
+  const s = NET.seats[ownerSeat], v = s && s.kind === 'phone' ? s.voice : null;
+  if (v) Sound.voice(v, 0.75);
+}
 // take a selfie: the front camera via the file picker (works on iPhone and Android without extra permissions);
 // cropped to a square around the face and shrunk to 160 px, about 8 KB
 async function photoFromFile(f) {
@@ -6008,7 +6098,7 @@ function renderTvLobby() {
   $('lobbyCode').textContent = NET.code; $('lobbyUrl').textContent = joinURL().replace(/^https?:\/\//, '');
   const rows = NET.seats.map((s, i) => {
     const sw = `<span class="sw" style="background:${COLS[i]}"></span>`;
-    if (s && s.kind === 'phone') return `<div class="lseat">${s.photo ? `<img class="seatPic" src="${s.photo}" alt="" style="--pc:${COLS[i]}">` : sw}<b>${esc(s.name)}</b><span class="lst ${NET.online[s.id] ? 'on' : 'off'}">${NET.online[s.id] ? 'phone connected' : 'phone disconnected'}</span>${NET.started ? '' : `<button class="quiet lkick" data-seat="${i}">Remove</button>`}</div>`;
+    if (s && s.kind === 'phone') return `<div class="lseat">${s.photo ? `<img class="seatPic" src="${s.photo}" alt="" style="--pc:${COLS[i]}">` : sw}<b>${esc(s.name)}</b>${s.voice ? '<span class="lvoice" title="Has a voice greeting">🎙</span>' : ''}<span class="lst ${NET.online[s.id] ? 'on' : 'off'}">${NET.online[s.id] ? 'phone connected' : 'phone disconnected'}</span>${NET.started ? '' : `<button class="quiet lkick" data-seat="${i}">Remove</button>`}</div>`;
     return `<div class="lseat">${sw}<select data-seat="${i}" ${NET.started ? 'disabled' : ''}><option value="empty">Empty — waiting for a phone</option><option value="computer" ${s && s.kind === 'computer' ? 'selected' : ''}>Computer player</option></select></div>`;
   }).join('');
   $('lobbySeats').innerHTML = rows;
@@ -6068,7 +6158,7 @@ function netInit() {
     if (!lsGet('hotelPhoneSound')) { lsSet('hotelPhoneSound', '1'); Sound.set('music', false); } // the TV plays the music
     lead.textContent = 'Your phone is your seat at the table: your view of the board, your money and your decisions.';
     const card = document.createElement('div'); card.className = 'card'; card.id = 'phoneLobby';
-    card.innerHTML = `<h2>Game <span id="phoneCode"></span></h2><label class="pname">Your name <input type="text" id="phoneName" maxlength="16" placeholder="Your name"></label><div class="photoRow"><div class="pPic empty" id="phonePic"></div><div class="photoBtns"><button id="phoneSnap">📷 Take a selfie</button><button id="phoneNoPic" class="quiet hidden">Remove photo</button><span class="note">Shown above your car on the TV. Optional.</span></div><input type="file" id="phoneFile" accept="image/*" capture="user" hidden></div><div class="note">Choose your colour</div><div id="phoneSeats" class="phoneSeats"></div><div class="row"><button class="primary" id="phoneJoin">Join the game</button><button id="phoneStart" class="hidden">Start game</button></div><p class="note" id="phoneNote"></p>`;
+    card.innerHTML = `<h2>Game <span id="phoneCode"></span></h2><label class="pname">Your name <input type="text" id="phoneName" maxlength="16" placeholder="Your name"></label><div class="photoRow"><div class="pPic empty" id="phonePic"></div><div class="photoBtns"><button id="phoneSnap">📷 Take a selfie</button><button id="phoneNoPic" class="quiet hidden">Remove photo</button><span class="note">Shown above your car on the TV. Optional.</span></div><input type="file" id="phoneFile" accept="image/*" capture="user" hidden></div><div class="voiceSlot"></div><div class="note">Choose your colour</div><div id="phoneSeats" class="phoneSeats"></div><div class="row"><button class="primary" id="phoneJoin">Join the game</button><button id="phoneStart" class="hidden">Start game</button></div><p class="note" id="phoneNote"></p>`;
     $('seats').closest('.card').after(card);
     $('phoneName').value = lsGet('hotelPhoneName') || '';
     $('phoneJoin').onclick = () => { const n = cleanName($('phoneName').value); if (!n) { toast('Type your name first.', 'bad'); $('phoneName').focus(); return; } lsSet('hotelPhoneName', n); Sound.init(); netHello(); Sound.ui('click'); };
@@ -6081,6 +6171,8 @@ function netInit() {
     };
     $('phoneNoPic').onclick = () => { try { localStorage.removeItem('hotelPhonePhoto'); } catch (er) {} showOwnPhoto(); netHello(); };
     showOwnPhoto();
+    voiceWidget(card.querySelector('.voiceSlot'));
+    { const slot = document.createElement('div'); slot.className = 'voiceSlot'; $('tableCard').querySelector('.tools').before(slot); voiceWidget(slot); }
     $('startBtn').classList.add('hidden'); $('resumeBtn').classList.add('hidden'); $('claimMode').closest('label').classList.add('hidden');
     $('newBtn').classList.add('hidden');
     // the TV sets the sky for everyone

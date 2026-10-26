@@ -386,9 +386,36 @@
   };
   function kickish(t) { tone({ f: 120, f2: 50, t, dur: 0.25, g: 0.35 }); }
 
+  // a player's recorded greeting (a data: URL from their phone): decoded once, quiet start trimmed, levelled, music dipped under it
+  const VOICE = new Map();
+  async function voiceBuf(url) {
+    if (VOICE.has(url)) return VOICE.get(url);
+    const p = (async () => {
+      const b64 = url.slice(url.indexOf(',') + 1), bin = atob(b64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      const buf = await ctx.decodeAudioData(u8.buffer);
+      let peak = 0, start = buf.length, end = 0;
+      for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; if (v > 0.03) { if (i < start) start = i; if (i > end) end = i; } } }
+      if (start >= end) { start = 0; end = buf.length; }
+      const sr = buf.sampleRate, from = Math.max(0, start / sr - 0.06), to = Math.min(buf.duration, end / sr + 0.25);
+      return { buf, from, dur: Math.min(4.3, Math.max(0.2, to - from)), gain: Math.min(5, 0.8 / Math.max(peak, 0.02)) };
+    })();
+    VOICE.set(url, p); p.catch(() => VOICE.delete(url));
+    if (VOICE.size > 12) VOICE.delete(VOICE.keys().next().value);
+    return p;
+  }
+  async function voice(url, delay) {
+    if (!ok() || !url) return 0;
+    let v; try { v = await voiceBuf(url); } catch (e) { return 0; }
+    const t = now() + (delay || 0), src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = v.buf; g.gain.value = v.gain * 1.1; src.connect(g); g.connect(sfxBus); src.start(t, v.from, v.dur);
+    if (musicBus && prefs.music) { const m = 0.42 * prefs.musicVol; musicBus.gain.cancelScheduledValues(t); musicBus.gain.setTargetAtTime(m * 0.25, t - 0.1, 0.08); musicBus.gain.setTargetAtTime(m, t + v.dur + 0.2, 0.5); }
+    return v.dur;
+  }
+
   // public
   const api = {
-    init,
+    init, voice,
     play(name, arg) { if (!ok()) return; const f = FX[name]; if (f) try { f(arg); } catch (e) { console.error(e); } },
     ui(name) { if (!ok()) return; const f = FX[name] || FX.click; try { f(); } catch (e) {} },
     // from the 3D board
